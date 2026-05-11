@@ -55,12 +55,6 @@ class MainActivity : Activity() {
         showContacts()
     }
 
-    override fun onResume() {
-        super.onResume()
-        loadContacts()
-        if (::content.isInitialized) showContacts()
-    }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == EDIT_CONTACT_REQUEST && resultCode == RESULT_OK) {
@@ -286,6 +280,7 @@ class MainActivity : Activity() {
             intent.putExtra("recentAt", it.recentAt)
         }
         startActivityForResult(intent, EDIT_CONTACT_REQUEST)
+        overridePendingTransition(0, 0)
     }
 
     private fun confirmDelete(contact: PhoneContact, detailDialog: AlertDialog) {

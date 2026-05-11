@@ -51,6 +51,11 @@ class EditContactActivity : Activity() {
         }
     }
 
+    override fun finish() {
+        super.finish()
+        overridePendingTransition(0, 0)
+    }
+
     private fun buildPage() {
         val nameInput = EditText(this).apply {
             hint = "姓名"
