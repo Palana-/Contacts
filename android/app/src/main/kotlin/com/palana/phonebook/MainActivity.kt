@@ -903,6 +903,9 @@ class MainActivity : Activity() {
     private fun decodeAvatarThumbnail(uriText: String): Bitmap? {
         val uri = cachedUri(uriText)
         return try {
+            if (uri.scheme == "file") {
+                return decodeSampledFile(uri.path ?: return null, dp(220), dp(220))
+            }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 contentResolver.loadThumbnail(uri, Size(dp(220), dp(220)), null)
                     ?: decodeSampledBitmap(uri, dp(220), dp(220))
@@ -910,8 +913,22 @@ class MainActivity : Activity() {
                 decodeSampledBitmap(uri, dp(220), dp(220))
             }
         } catch (_: Exception) {
-            decodeSampledBitmap(uri, dp(220), dp(220))
+            try {
+                if (uri.scheme == "file") decodeSampledFile(uri.path ?: return null, dp(220), dp(220))
+                else decodeSampledBitmap(uri, dp(220), dp(220))
+            } catch (_: Exception) {
+                null
+            }
         }
+    }
+
+    private fun decodeSampledFile(path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, options)
+        options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
+        options.inJustDecodeBounds = false
+        options.inPreferredConfig = Bitmap.Config.RGB_565
+        return BitmapFactory.decodeFile(path, options)
     }
 
     private fun copyAvatarToPrivateFile(sourceUri: String, contactId: String): String? {
