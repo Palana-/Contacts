@@ -37,8 +37,11 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.nio.charset.Charset
+import java.text.Collator
 import java.util.concurrent.Executors
 import java.util.UUID
+import java.util.Locale
 import kotlin.math.abs
 
 data class PhoneContact(
@@ -67,6 +70,8 @@ class MainActivity : Activity() {
     private val avatarBitmapCache = LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 16).toInt())
     private val imageExecutor = Executors.newFixedThreadPool(2)
     private val workExecutor = Executors.newSingleThreadExecutor()
+    private val gbkCharset = Charset.forName("GBK")
+    private val chineseCollator = Collator.getInstance(Locale.CHINA)
     private var pendingCallNumber: String? = null
     @Volatile private var operationInProgress = false
 
@@ -254,10 +259,46 @@ class MainActivity : Activity() {
     private fun buildContactItems(): List<ContactListItem> {
         return contacts
             .filter { it.avatarUri != null }
+            .sortedWith(contactNameComparator())
             .map { ContactListItem(it, true) } +
             contacts
                 .filter { it.avatarUri == null }
+                .sortedWith(contactNameComparator())
                 .map { ContactListItem(it, false) }
+    }
+
+    private fun contactNameComparator(): Comparator<PhoneContact> {
+        return compareBy<PhoneContact> { nameInitial(it.name) }
+            .thenComparator { left, right -> chineseCollator.compare(left.name, right.name) }
+            .thenBy { it.phone }
+    }
+
+    private fun nameInitial(name: String): String {
+        val first = name.trim().firstOrNull() ?: return "#"
+        if (first in 'A'..'Z' || first in 'a'..'z') return first.uppercaseChar().toString()
+        if (first.isDigit()) return "#$first"
+        return chineseInitial(first)?.toString() ?: first.uppercaseChar().toString()
+    }
+
+    private fun chineseInitial(ch: Char): Char? {
+        val bytes = ch.toString().toByteArray(gbkCharset)
+        if (bytes.size < 2) return null
+        val code = (bytes[0].toInt() and 0xFF) * 256 + (bytes[1].toInt() and 0xFF)
+        if (code < 0xB0A1 || code > 0xF7FE) return null
+        val initials = charArrayOf(
+            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K',
+            'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'W',
+            'X', 'Y', 'Z'
+        )
+        val ranges = intArrayOf(
+            0xB0A1, 0xB0C5, 0xB2C1, 0xB4EE, 0xB6EA, 0xB7A2, 0xB8C1, 0xB9FE,
+            0xBBF7, 0xBFA6, 0xC0AC, 0xC2E8, 0xC4C3, 0xC5B6, 0xC5BE, 0xC6DA,
+            0xC8BB, 0xC8F6, 0xCBFA, 0xCDDA, 0xCEF4, 0xD1B9, 0xD4D1, 0xD7FA
+        )
+        for (i in 0 until ranges.lastIndex) {
+            if (code >= ranges[i] && code < ranges[i + 1]) return initials[i]
+        }
+        return null
     }
 
     private fun visualCard(contact: PhoneContact): View {
@@ -855,7 +896,7 @@ class MainActivity : Activity() {
                 )
             )
         }
-        contacts.sortWith(compareByDescending<PhoneContact> { it.avatarUri != null }.thenBy { it.name })
+        contacts.sortWith(compareByDescending<PhoneContact> { it.avatarUri != null }.then(contactNameComparator()))
     }
 
     private fun saveContacts() {
