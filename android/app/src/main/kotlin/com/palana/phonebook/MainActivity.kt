@@ -14,17 +14,18 @@ import android.os.Bundle
 import android.provider.ContactsContract
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.GridLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -38,6 +39,11 @@ data class PhoneContact(
     val avatarUri: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val recentAt: Long = 0L
+)
+
+private data class ContactListItem(
+    val contact: PhoneContact,
+    val hasAvatar: Boolean
 )
 
 class MainActivity : Activity() {
@@ -145,25 +151,30 @@ class MainActivity : Activity() {
             return
         }
 
-        val withAvatar = contacts.filter { it.avatarUri != null }
-        val withoutAvatar = contacts.filter { it.avatarUri == null }
-        val body = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        val items = contacts
+            .filter { it.avatarUri != null }
+            .map { ContactListItem(it, true) } +
+            contacts
+                .filter { it.avatarUri == null }
+                .map { ContactListItem(it, false) }
+
+        val adapter = ContactAdapter(items)
+        val layoutManager = GridLayoutManager(this, 2).apply {
+            spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+                override fun getSpanSize(position: Int): Int {
+                    return if (items[position].hasAvatar) 1 else 2
+                }
+            }
+        }
+
+        content.addView(RecyclerView(this).apply {
             setPadding(dp(16), dp(16), dp(16), dp(28))
-        }
-
-        if (withAvatar.isNotEmpty()) {
-            val grid = GridLayout(this).apply { columnCount = 2 }
-            withAvatar.forEach { grid.addView(visualCard(it), gridParams()) }
-            body.addView(grid)
-        }
-
-        if (withoutAvatar.isNotEmpty()) {
-            body.addView(sectionTitle(if (withAvatar.isEmpty()) "通讯录" else "无头像联系人"))
-            withoutAvatar.forEach { body.addView(listRow(it)) }
-        }
-
-        content.addView(ScrollView(this).apply { addView(body) })
+            clipToPadding = false
+            this.layoutManager = layoutManager
+            this.adapter = adapter
+            setHasFixedSize(false)
+            itemAnimator = null
+        }, FrameLayout.LayoutParams(-1, -1))
     }
 
     private fun visualCard(contact: PhoneContact): View {
@@ -223,6 +234,42 @@ class MainActivity : Activity() {
         return row.withBottomMargin(dp(10))
     }
 
+    private inner class ContactAdapter(
+        private val items: List<ContactListItem>
+    ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+        override fun getItemViewType(position: Int): Int {
+            return if (items[position].hasAvatar) VIEW_TYPE_AVATAR else VIEW_TYPE_LIST
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+            val placeholder = FrameLayout(parent.context)
+            return object : RecyclerView.ViewHolder(placeholder) {}
+        }
+
+        override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            val item = items[position]
+            val view = if (item.hasAvatar) visualCard(item.contact) else listRow(item.contact)
+            val height = if (item.hasAvatar) dp(190) else ViewGroup.LayoutParams.WRAP_CONTENT
+            val params = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height).apply {
+                val horizontal = if (item.hasAvatar) dp(5) else 0
+                setMargins(horizontal, dp(5), horizontal, dp(10))
+            }
+            holder.itemView.layoutParams = params
+            (holder.itemView as FrameLayout).apply {
+                removeAllViews()
+                addView(
+                    view,
+                    FrameLayout.LayoutParams(
+                        -1,
+                        if (item.hasAvatar) -1 else ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                )
+            }
+        }
+
+        override fun getItemCount(): Int = items.size
+    }
+
     private fun showContactDialog(contact: PhoneContact) {
         val dialog = AlertDialog.Builder(this).create()
         val body = LinearLayout(this).apply {
@@ -231,6 +278,16 @@ class MainActivity : Activity() {
             setPadding(dp(22), dp(20), dp(22), dp(22))
             background = rounded(Color.WHITE, 26)
         }
+        body.addView(FrameLayout(this).apply {
+            addView(TextView(context).apply {
+                text = "×"
+                textSize = 28f
+                gravity = Gravity.CENTER
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(MUTED)
+                setOnClickListener { dialog.dismiss() }
+            }, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.RIGHT))
+        }, LinearLayout.LayoutParams(-1, dp(44)).withBottom(dp(2)))
         body.addView(TextView(this).apply {
             text = contact.name.take(1).uppercase()
             textSize = 56f
@@ -263,7 +320,6 @@ class MainActivity : Activity() {
         body.addView(dangerButton("删除") {
             confirmDelete(contact, dialog)
         }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
-        body.addView(secondaryButton("返回") { dialog.dismiss() }, LinearLayout.LayoutParams(-1, dp(46)))
         dialog.setView(body)
         dialog.setCanceledOnTouchOutside(true)
         dialog.show()
@@ -544,15 +600,6 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun gridParams(): GridLayout.LayoutParams {
-        return GridLayout.LayoutParams().apply {
-            width = 0
-            height = dp(190)
-            columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-            setMargins(dp(5), dp(5), dp(5), dp(10))
-        }
-    }
-
     private fun rounded(color: Int, radius: Int): GradientDrawable {
         return GradientDrawable().apply {
             setColor(color)
@@ -620,5 +667,7 @@ class MainActivity : Activity() {
         private const val TEXT = 0xFF0F172A.toInt()
         private const val MUTED = 0xFF64748B.toInt()
         private const val SURFACE = 0xFFF8FAFC.toInt()
+        private const val VIEW_TYPE_AVATAR = 1
+        private const val VIEW_TYPE_LIST = 2
     }
 }
