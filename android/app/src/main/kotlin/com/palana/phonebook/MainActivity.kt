@@ -6,12 +6,16 @@ import android.app.AlertDialog
 import android.content.ContentProviderOperation
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
+import android.util.LruCache
+import android.util.Size
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -29,6 +33,7 @@ import androidx.recyclerview.widget.RecyclerView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.Executors
 import java.util.UUID
 import kotlin.math.abs
 
@@ -53,6 +58,8 @@ class MainActivity : Activity() {
     private lateinit var contactAdapter: ContactAdapter
     private lateinit var contactLayoutManager: GridLayoutManager
     private val imageUriCache = LinkedHashMap<String, Uri>()
+    private val avatarBitmapCache = LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 16).toInt())
+    private val imageExecutor = Executors.newFixedThreadPool(2)
     private var pendingCallNumber: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -177,6 +184,7 @@ class MainActivity : Activity() {
             layoutManager = contactLayoutManager
             adapter = contactAdapter
             setHasFixedSize(false)
+            setItemViewCacheSize(16)
             itemAnimator = null
         }
         content.addView(recyclerView, FrameLayout.LayoutParams(-1, -1))
@@ -310,9 +318,10 @@ class MainActivity : Activity() {
             name.text = contact.name
             val avatar = contact.avatarUri
             if (avatar == null) {
+                image.tag = null
                 image.setImageDrawable(null)
             } else {
-                image.setImageURI(cachedUri(avatar))
+                loadAvatarAsync(avatar, image)
             }
         }
     }
@@ -752,6 +761,66 @@ class MainActivity : Activity() {
 
     private fun cachedUri(value: String): Uri {
         return imageUriCache.getOrPut(value) { Uri.parse(value) }
+    }
+
+    private fun loadAvatarAsync(uriText: String, target: ImageView) {
+        target.tag = uriText
+        avatarBitmapCache.get(uriText)?.let {
+            target.setImageBitmap(it)
+            return
+        }
+        target.setImageDrawable(null)
+        imageExecutor.execute {
+            val bitmap = decodeAvatarThumbnail(uriText)
+            if (bitmap != null) {
+                avatarBitmapCache.put(uriText, bitmap)
+                target.post {
+                    if (target.tag == uriText) {
+                        target.setImageBitmap(bitmap)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun decodeAvatarThumbnail(uriText: String): Bitmap? {
+        val uri = cachedUri(uriText)
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                contentResolver.loadThumbnail(uri, Size(dp(220), dp(220)), null)
+            } else {
+                decodeSampledBitmap(uri, dp(220), dp(220))
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun decodeSampledBitmap(uri: Uri, reqWidth: Int, reqHeight: Int): Bitmap? {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, options)
+        }
+        options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
+        options.inJustDecodeBounds = false
+        options.inPreferredConfig = Bitmap.Config.RGB_565
+        return contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, options)
+        }
+    }
+
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+        val height = options.outHeight
+        val width = options.outWidth
+        var inSampleSize = 1
+        if (height > reqHeight || width > reqWidth) {
+            var halfHeight = height / 2
+            var halfWidth = width / 2
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
     }
 
     private fun View.withBottomMargin(margin: Int): View {
