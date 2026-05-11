@@ -34,6 +34,7 @@ import java.io.ByteArrayOutputStream
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.Executors
 import java.util.UUID
 import kotlin.math.abs
@@ -530,7 +531,8 @@ class MainActivity : Activity() {
                 val existing = existingByPhone[normalized]
                 if (existing != null) {
                     if (existing.avatarUri == null && !phoneAvatar.isNullOrBlank()) {
-                        val updated = existing.copy(avatarUri = phoneAvatar)
+                        val localAvatar = copyAvatarToPrivateFile(phoneAvatar, existing.id) ?: phoneAvatar
+                        val updated = existing.copy(avatarUri = localAvatar)
                         contacts.removeAll { it.id == existing.id }
                         contacts.add(updated)
                         existingByPhone[normalized] = updated
@@ -538,11 +540,18 @@ class MainActivity : Activity() {
                     }
                     continue
                 }
+                val id = UUID.randomUUID().toString()
+                val localAvatar = if (!phoneAvatar.isNullOrBlank()) {
+                    copyAvatarToPrivateFile(phoneAvatar, id) ?: phoneAvatar
+                } else {
+                    null
+                }
                 contacts.add(
                     PhoneContact(
+                        id = id,
                         name = cursor.getString(nameIndex)?.trim().orEmpty().ifBlank { phone },
                         phone = phone,
-                        avatarUri = phoneAvatar
+                        avatarUri = localAvatar
                     )
                 )
                 existingByPhone[normalized] = contacts.last()
@@ -896,9 +905,24 @@ class MainActivity : Activity() {
         return try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 contentResolver.loadThumbnail(uri, Size(dp(220), dp(220)), null)
+                    ?: decodeSampledBitmap(uri, dp(220), dp(220))
             } else {
                 decodeSampledBitmap(uri, dp(220), dp(220))
             }
+        } catch (_: Exception) {
+            decodeSampledBitmap(uri, dp(220), dp(220))
+        }
+    }
+
+    private fun copyAvatarToPrivateFile(sourceUri: String, contactId: String): String? {
+        return try {
+            val bitmap = decodeAvatarThumbnail(sourceUri) ?: return null
+            val dir = File(filesDir, "avatars").apply { mkdirs() }
+            val file = File(dir, "$contactId.jpg")
+            FileOutputStream(file).use { output ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)
+            }
+            Uri.fromFile(file).toString()
         } catch (_: Exception) {
             null
         }
