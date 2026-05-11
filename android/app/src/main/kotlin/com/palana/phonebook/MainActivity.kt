@@ -44,6 +44,7 @@ class MainActivity : Activity() {
     private lateinit var shell: FrameLayout
     private lateinit var page: LinearLayout
     private lateinit var content: FrameLayout
+    private lateinit var bottomNavBar: LinearLayout
     private lateinit var fab: TextView
 
     private var currentTab = Tab.CONTACTS
@@ -109,7 +110,8 @@ class MainActivity : Activity() {
         }
         content = FrameLayout(this)
         page.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
-        page.addView(bottomNav())
+        bottomNavBar = bottomNav()
+        page.addView(bottomNavBar)
         shell.addView(page, FrameLayout.LayoutParams(-1, -1))
 
         fab = TextView(this).apply {
@@ -142,14 +144,22 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun refreshBottomNav() {
+        bottomNavBar.removeAllViews()
+        bottomNavBar.addView(navItem("□", "通讯录", Tab.CONTACTS), LinearLayout.LayoutParams(0, dp(70), 1f))
+        bottomNavBar.addView(navItem("◷", "最近", Tab.RECENT), LinearLayout.LayoutParams(0, dp(70), 1f))
+        bottomNavBar.addView(navItem("⋯", "更多", Tab.MORE), LinearLayout.LayoutParams(0, dp(70), 1f))
+    }
+
     private fun navItem(icon: String, label: String, tab: Tab): LinearLayout {
         val selected = currentTab == tab
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setOnClickListener {
+                if (currentTab == tab) return@setOnClickListener
                 currentTab = tab
-                buildShell()
+                refreshBottomNav()
                 refreshCurrentTab()
             }
             addView(TextView(context).apply {
@@ -171,6 +181,7 @@ class MainActivity : Activity() {
     private fun showContacts() {
         currentTab = Tab.CONTACTS
         editingContact = null
+        bottomNavBar.visibility = View.VISIBLE
         fab.visibility = View.VISIBLE
         content.removeAllViews()
 
@@ -202,6 +213,8 @@ class MainActivity : Activity() {
 
     private fun showRecent() {
         currentTab = Tab.RECENT
+        editingContact = null
+        bottomNavBar.visibility = View.VISIBLE
         fab.visibility = View.GONE
         content.removeAllViews()
         val recent = contacts.filter { it.recentAt > 0L }.sortedByDescending { it.recentAt }
@@ -216,6 +229,8 @@ class MainActivity : Activity() {
 
     private fun showMore() {
         currentTab = Tab.MORE
+        editingContact = null
+        bottomNavBar.visibility = View.VISIBLE
         fab.visibility = View.GONE
         content.removeAllViews()
         val body = pageBody("更多")
@@ -244,6 +259,7 @@ class MainActivity : Activity() {
     private fun showEditPage(contact: PhoneContact?) {
         editingContact = contact ?: PhoneContact(name = "", phone = "")
         if (contact != null && selectedAvatarUri == null) selectedAvatarUri = contact.avatarUri
+        bottomNavBar.visibility = View.GONE
         fab.visibility = View.GONE
         content.removeAllViews()
 
@@ -408,15 +424,26 @@ class MainActivity : Activity() {
             showEditPage(contact)
         }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
         body.addView(dangerButton("删除") {
-            dialog.dismiss()
-            contacts.removeAll { it.id == contact.id }
-            saveContacts()
-            refreshCurrentTab()
+            confirmDelete(contact, dialog)
         }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
         body.addView(secondaryButton("返回") { dialog.dismiss() }, LinearLayout.LayoutParams(-1, dp(46)))
         dialog.setView(body)
         dialog.setCanceledOnTouchOutside(true)
         dialog.show()
+    }
+
+    private fun confirmDelete(contact: PhoneContact, detailDialog: AlertDialog) {
+        AlertDialog.Builder(this)
+            .setTitle("删除联系人")
+            .setMessage("确定要删除“${contact.name}”吗？")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("删除") { _, _ ->
+                detailDialog.dismiss()
+                contacts.removeAll { it.id == contact.id }
+                saveContacts()
+                refreshCurrentTab()
+            }
+            .show()
     }
 
     private fun requestReadContactsThenImport() {
