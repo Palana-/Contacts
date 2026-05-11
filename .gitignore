@@ -1,0 +1,20 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+
+# Gradle and Android build output
+.gradle/
+build/
+**/build/
+captures/
+
+# Local SDK and signing files
+local.properties
+key.properties
+*.jks
+*.keystore
+
+# Logs
+*.log
