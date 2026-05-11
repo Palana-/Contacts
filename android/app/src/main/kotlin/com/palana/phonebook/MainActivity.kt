@@ -98,7 +98,11 @@ class MainActivity : Activity() {
     }
 
     private fun buildShell() {
-        shell = FrameLayout(this).apply { setBackgroundColor(SURFACE) }
+        shell = FrameLayout(this).apply {
+            setBackgroundColor(SURFACE)
+            setPadding(0, statusBarHeight(), 0, 0)
+            clipToPadding = false
+        }
         page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(SURFACE)
@@ -314,14 +318,9 @@ class MainActivity : Activity() {
             setImageURI(Uri.parse(contact.avatarUri))
             alpha = 0.96f
         }
-        frame.addView(image, FrameLayout.LayoutParams(-1, -1))
-        frame.addView(TextView(this).apply {
-            text = contact.name.take(1).uppercase()
-            textSize = 52f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-        }, FrameLayout.LayoutParams(-1, -1))
+        frame.addView(image, FrameLayout.LayoutParams(-1, -1).apply {
+            bottomMargin = dp(48)
+        })
         frame.addView(TextView(this).apply {
             text = contact.name
             gravity = Gravity.CENTER
@@ -786,6 +785,11 @@ class MainActivity : Activity() {
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun statusBarHeight(): Int {
+        val id = resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (id > 0) resources.getDimensionPixelSize(id) else dp(24)
+    }
 
     companion object {
         private const val CONTACTS_KEY = "contacts"
