@@ -25,6 +25,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
@@ -60,10 +61,14 @@ class MainActivity : Activity() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var contactAdapter: ContactAdapter
     private lateinit var contactLayoutManager: GridLayoutManager
+    private lateinit var progressOverlay: FrameLayout
+    private lateinit var progressText: TextView
     private val imageUriCache = LinkedHashMap<String, Uri>()
     private val avatarBitmapCache = LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 16).toInt())
     private val imageExecutor = Executors.newFixedThreadPool(2)
+    private val workExecutor = Executors.newSingleThreadExecutor()
     private var pendingCallNumber: String? = null
+    @Volatile private var operationInProgress = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,6 +88,11 @@ class MainActivity : Activity() {
         }
     }
 
+    override fun onBackPressed() {
+        if (operationInProgress) return
+        super.onBackPressed()
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -91,9 +101,9 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
         when (requestCode) {
-            CALL_PERMISSION_REQUEST -> if (granted) pendingCallNumber?.let { makeCallNow(it) } else toast("需要电话权限才能直接拨号")
-            READ_CONTACTS_REQUEST -> if (granted) importFromPhoneContacts() else toast("需要通讯录读取权限")
-            WRITE_CONTACTS_REQUEST -> if (granted) exportToPhoneContacts() else toast("需要通讯录写入权限")
+            CALL_PERMISSION_REQUEST -> if (granted) pendingCallNumber?.let { makeCallNow(it) } else toast("\u9700\u8981\u7535\u8bdd\u6743\u9650\u624d\u80fd\u62e8\u53f7")
+            READ_CONTACTS_REQUEST -> if (granted) runImportFromPhoneContacts() else toast("\u9700\u8981\u901a\u8baf\u5f55\u8bfb\u53d6\u6743\u9650")
+            WRITE_CONTACTS_REQUEST -> if (granted) runExportToPhoneContacts() else toast("\u9700\u8981\u901a\u8baf\u5f55\u5199\u5165\u6743\u9650")
         }
     }
 
@@ -112,19 +122,58 @@ class MainActivity : Activity() {
             elevation = dp(2).toFloat()
         }
         topBar.addView(TextView(this).apply {
-            text = "电话本"
+            text = "\u7535\u8bdd\u672c"
             textSize = 28f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(TEXT)
             gravity = Gravity.CENTER_VERTICAL
         }, LinearLayout.LayoutParams(0, dp(54), 1f))
         topBar.addView(topIcon("+") { openEditor(null) }, LinearLayout.LayoutParams(dp(48), dp(48)).withRight(dp(6)))
-        topBar.addView(topIcon("⋯") { showMoreMenu(it) }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        topBar.addView(topIcon("...") { showMoreMenu(it) }, LinearLayout.LayoutParams(dp(48), dp(48)))
 
         content = FrameLayout(this)
         root.addView(topBar)
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
-        setContentView(root)
+        setContentView(FrameLayout(this).apply {
+            addView(root, FrameLayout.LayoutParams(-1, -1))
+            progressOverlay = createProgressOverlay()
+            addView(progressOverlay, FrameLayout.LayoutParams(-1, -1))
+        })
+    }
+
+    private fun createProgressOverlay(): FrameLayout {
+        return FrameLayout(this).apply {
+            visibility = View.GONE
+            isClickable = true
+            isFocusable = true
+            setBackgroundColor(0x66000000)
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(24), dp(22), dp(24), dp(22))
+                background = rounded(Color.WHITE, 22)
+                addView(ProgressBar(context), LinearLayout.LayoutParams(dp(52), dp(52)).withBottom(dp(14)))
+                progressText = TextView(context).apply {
+                    text = "\u6b63\u5728\u5904\u7406..."
+                    textSize = 16f
+                    setTextColor(TEXT)
+                    gravity = Gravity.CENTER
+                    typeface = Typeface.DEFAULT_BOLD
+                }
+                addView(progressText)
+            }, FrameLayout.LayoutParams(dp(190), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        }
+    }
+
+    private fun showProgress(message: String) {
+        operationInProgress = true
+        progressText.text = message
+        progressOverlay.visibility = View.VISIBLE
+    }
+
+    private fun hideProgress() {
+        progressOverlay.visibility = View.GONE
+        operationInProgress = false
     }
 
     private fun topIcon(text: String, onClick: (View) -> Unit): TextView {
@@ -140,38 +189,35 @@ class MainActivity : Activity() {
     }
 
     private fun showMoreMenu(anchor: View) {
+        val importTitle = "\u4ece\u624b\u673a\u901a\u8baf\u5f55\u5bfc\u5165"
+        val syncTitle = "\u5199\u5165\u624b\u673a\u901a\u8baf\u5f55"
+        val vcfTitle = "\u5bfc\u51fa VCF \u6587\u4ef6"
+        val csvTitle = "\u5bfc\u51fa CSV \u6587\u4ef6"
         PopupMenu(this, anchor).apply {
-            menu.add("从手机通讯录导入")
-            menu.add("写入手机通讯录")
-            menu.add("导出 VCF 文件")
-            menu.add("导出 CSV 文件")
+            menu.add(importTitle)
+            menu.add(syncTitle)
+            menu.add(vcfTitle)
+            menu.add(csvTitle)
             setOnMenuItemClickListener {
                 when (it.title.toString()) {
-                    "从手机通讯录导入" -> requestReadContactsThenImport()
-                    "写入手机通讯录" -> requestWriteContactsThenExport()
-                    "导出 VCF 文件" -> exportVcfFile()
-                    "导出 CSV 文件" -> exportCsvFile()
+                    importTitle -> requestReadContactsThenImport()
+                    syncTitle -> requestWriteContactsThenExport()
+                    vcfTitle -> exportVcfFile()
+                    csvTitle -> exportCsvFile()
                 }
                 true
             }
             show()
         }
     }
-
     private fun showContacts() {
         content.removeAllViews()
         if (contacts.isEmpty()) {
-            content.addView(emptyView("还没有联系人", "点右上角 + 添加第一个联系人"))
+            content.addView(emptyView("\u6682\u65e0\u8054\u7cfb\u4eba", "\u70b9\u51fb\u53f3\u4e0a\u89d2 + \u6dfb\u52a0\u8054\u7cfb\u4eba"))
             return
         }
 
-        val items = contacts
-            .filter { it.avatarUri != null }
-            .map { ContactListItem(it, true) } +
-            contacts
-                .filter { it.avatarUri == null }
-                .map { ContactListItem(it, false) }
-
+        val items = buildContactItems()
         contactAdapter = ContactAdapter(items)
         contactLayoutManager = GridLayoutManager(this, 2).apply {
             spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
@@ -192,7 +238,6 @@ class MainActivity : Activity() {
         }
         content.addView(recyclerView, FrameLayout.LayoutParams(-1, -1))
     }
-
     private fun updateContactList() {
         val items = buildContactItems()
         if (items.isEmpty()) {
@@ -418,7 +463,7 @@ class MainActivity : Activity() {
         }
         body.addView(FrameLayout(this).apply {
             addView(TextView(context).apply {
-                text = "×"
+                text = "X"
                 textSize = 28f
                 gravity = Gravity.CENTER
                 typeface = Typeface.DEFAULT_BOLD
@@ -447,22 +492,21 @@ class MainActivity : Activity() {
             setTextColor(MUTED)
             gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(-1, -2).withBottom(dp(18)))
-        body.addView(primaryButton("拨号") {
+        body.addView(primaryButton("\u62e8\u53f7") {
             dialog.dismiss()
             callContact(contact)
         }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
-        body.addView(secondaryButton("编辑") {
+        body.addView(secondaryButton("\u7f16\u8f91") {
             dialog.dismiss()
             openEditor(contact)
         }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
-        body.addView(dangerButton("删除") {
+        body.addView(dangerButton("\u5220\u9664") {
             confirmDelete(contact, dialog)
         }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
         dialog.setView(body)
         dialog.setCanceledOnTouchOutside(true)
         dialog.show()
     }
-
     private fun openEditor(contact: PhoneContact?) {
         val intent = Intent(this, EditContactActivity::class.java)
         contact?.let {
@@ -479,10 +523,10 @@ class MainActivity : Activity() {
 
     private fun confirmDelete(contact: PhoneContact, detailDialog: AlertDialog) {
         AlertDialog.Builder(this)
-            .setTitle("删除联系人")
-            .setMessage("确定要删除“${contact.name}”吗？")
-            .setNegativeButton("取消", null)
-            .setPositiveButton("删除") { _, _ ->
+            .setTitle("\u5220\u9664\u8054\u7cfb\u4eba")
+            .setMessage("\u786e\u5b9a\u5220\u9664 ${contact.name} \u5417\uff1f")
+            .setNegativeButton("\u53d6\u6d88", null)
+            .setPositiveButton("\u5220\u9664") { _, _ ->
                 detailDialog.dismiss()
                 contacts.removeAll { it.id == contact.id }
                 saveContacts()
@@ -492,20 +536,43 @@ class MainActivity : Activity() {
     }
 
     private fun requestReadContactsThenImport() {
-        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) importFromPhoneContacts()
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) runImportFromPhoneContacts()
         else requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), READ_CONTACTS_REQUEST)
     }
 
     private fun requestWriteContactsThenExport() {
         if (contacts.isEmpty()) {
-            toast("暂无联系人可写入")
+            toast("\u6682\u65e0\u8054\u7cfb\u4eba\u53ef\u5199\u5165")
             return
         }
-        if (checkSelfPermission(Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) exportToPhoneContacts()
+        if (checkSelfPermission(Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) runExportToPhoneContacts()
         else requestPermissions(arrayOf(Manifest.permission.WRITE_CONTACTS), WRITE_CONTACTS_REQUEST)
     }
 
-    private fun importFromPhoneContacts() {
+    private fun runImportFromPhoneContacts() {
+        showProgress("\u6b63\u5728\u5bfc\u5165\u901a\u8baf\u5f55...")
+        workExecutor.execute {
+            val result = importFromPhoneContacts()
+            runOnUiThread {
+                saveContacts()
+                hideProgress()
+                toast("\u5df2\u5bfc\u5165 ${result.first} \u4e2a\u8054\u7cfb\u4eba\uff0c\u8865\u9f50 ${result.second} \u4e2a\u5934\u50cf")
+                showContacts()
+            }
+        }
+    }
+
+    private fun runExportToPhoneContacts() {
+        showProgress("\u6b63\u5728\u5199\u5165\u624b\u673a\u901a\u8baf\u5f55...")
+        workExecutor.execute {
+            val exported = exportToPhoneContacts()
+            runOnUiThread {
+                hideProgress()
+                toast("\u5df2\u540c\u6b65 $exported \u4e2a\u8054\u7cfb\u4eba\u5230\u624b\u673a\u901a\u8baf\u5f55")
+            }
+        }
+    }
+    private fun importFromPhoneContacts(): Pair<Int, Int> {
         val existingByPhone = contacts.associateBy { normalizePhone(it.phone) }.toMutableMap()
         var imported = 0
         var avatarUpdated = 0
@@ -562,12 +629,10 @@ class MainActivity : Activity() {
                 imported++
             }
         }
-        saveContacts()
-        toast("已导入 $imported 个联系人，补齐 $avatarUpdated 个头像")
-        showContacts()
+        return imported to avatarUpdated
     }
 
-    private fun exportToPhoneContacts() {
+    private fun exportToPhoneContacts(): Int {
         var exported = 0
         for (contact in contacts) {
             val rawContactId = findRawContactIdByPhone(contact.phone)
@@ -615,7 +680,7 @@ class MainActivity : Activity() {
             } catch (_: Exception) {
             }
         }
-        toast("已写入 $exported 个联系人到手机通讯录")
+        return exported
     }
 
     private fun findRawContactIdByPhone(phone: String): Long? {
@@ -694,50 +759,66 @@ class MainActivity : Activity() {
             null
         }
     }
-
     private fun exportVcfFile() {
         if (contacts.isEmpty()) {
-            toast("暂无联系人可导出")
+            toast("\u6682\u65e0\u8054\u7cfb\u4eba\u53ef\u5bfc\u51fa")
             return
         }
-        val text = buildString {
-            contacts.forEach { c ->
-                appendLine("BEGIN:VCARD")
-                appendLine("VERSION:3.0")
-                appendLine("FN:${escapeVcf(c.name)}")
-                appendLine("TEL;TYPE=CELL:${escapeVcf(c.phone)}")
-                appendLine("END:VCARD")
+        showProgress("\u6b63\u5728\u5bfc\u51fa VCF...")
+        workExecutor.execute {
+            val text = buildString {
+                contacts.forEach { c ->
+                    appendLine("BEGIN:VCARD")
+                    appendLine("VERSION:3.0")
+                    appendLine("FN:${escapeVcf(c.name)}")
+                    appendLine("TEL;TYPE=CELL:${escapeVcf(c.phone)}")
+                    appendLine("END:VCARD")
+                }
+            }
+            val file = writeExportFile("contacts.vcf", text)
+            runOnUiThread {
+                hideProgress()
+                shareExportFile(file, "text/vcard")
             }
         }
-        shareExportFile("contacts.vcf", "text/vcard", text)
     }
 
     private fun exportCsvFile() {
         if (contacts.isEmpty()) {
-            toast("暂无联系人可导出")
+            toast("\u6682\u65e0\u8054\u7cfb\u4eba\u53ef\u5bfc\u51fa")
             return
         }
-        val text = buildString {
-            appendLine("姓名,手机号")
-            contacts.forEach { appendLine("${csvCell(it.name)},${csvCell(it.phone)}") }
+        showProgress("\u6b63\u5728\u5bfc\u51fa CSV...")
+        workExecutor.execute {
+            val text = buildString {
+                appendLine("\u59d3\u540d,\u624b\u673a\u53f7")
+                contacts.forEach { appendLine("${csvCell(it.name)},${csvCell(it.phone)}") }
+            }
+            val file = writeExportFile("contacts.csv", text)
+            runOnUiThread {
+                hideProgress()
+                shareExportFile(file, "text/csv")
+            }
         }
-        shareExportFile("contacts.csv", "text/csv", text)
     }
 
-    private fun shareExportFile(fileName: String, mimeType: String, text: String) {
+    private fun writeExportFile(fileName: String, text: String): File {
         val dir = File(cacheDir, "exports").apply { mkdirs() }
         val file = File(dir, fileName)
         file.writeText(text, Charsets.UTF_8)
+        return file
+    }
+
+    private fun shareExportFile(file: File, mimeType: String) {
         val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = mimeType
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        toast("已生成：${file.absolutePath}")
-        startActivity(Intent.createChooser(intent, "导出联系人"))
+        toast("\u5df2\u751f\u6210\uff1a${file.absolutePath}")
+        startActivity(Intent.createChooser(intent, "\u5bfc\u51fa\u8054\u7cfb\u4eba"))
     }
-
     private fun callContact(contact: PhoneContact) {
         val updated = contact.copy(recentAt = System.currentTimeMillis())
         contacts.removeAll { it.id == contact.id }
@@ -754,10 +835,9 @@ class MainActivity : Activity() {
         try {
             startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:$phone")))
         } catch (_: SecurityException) {
-            toast("没有电话权限")
+            toast("\u62e8\u53f7\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u7535\u8bdd\u6743\u9650")
         }
     }
-
     private fun loadContacts() {
         contacts.clear()
         val raw = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(CONTACTS_KEY, "[]") ?: "[]"
