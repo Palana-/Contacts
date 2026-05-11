@@ -52,6 +52,7 @@ class MainActivity : Activity() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var contactAdapter: ContactAdapter
     private lateinit var contactLayoutManager: GridLayoutManager
+    private val imageUriCache = LinkedHashMap<String, Uri>()
     private var pendingCallNumber: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -278,32 +279,121 @@ class MainActivity : Activity() {
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-            val placeholder = FrameLayout(parent.context)
-            return object : RecyclerView.ViewHolder(placeholder) {}
+            return if (viewType == VIEW_TYPE_AVATAR) {
+                AvatarContactHolder(createAvatarItemView(parent))
+            } else {
+                ListContactHolder(createListItemView(parent))
+            }
         }
 
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
             val item = items[position]
-            val view = if (item.hasAvatar) visualCard(item.contact) else listRow(item.contact)
-            val height = if (item.hasAvatar) dp(190) else ViewGroup.LayoutParams.WRAP_CONTENT
-            val params = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height).apply {
-                val horizontal = if (item.hasAvatar) dp(5) else 0
-                setMargins(horizontal, dp(5), horizontal, dp(10))
-            }
-            holder.itemView.layoutParams = params
-            (holder.itemView as FrameLayout).apply {
-                removeAllViews()
-                addView(
-                    view,
-                    FrameLayout.LayoutParams(
-                        -1,
-                        if (item.hasAvatar) -1 else ViewGroup.LayoutParams.WRAP_CONTENT
-                    )
-                )
+            if (holder is AvatarContactHolder) {
+                holder.bind(item.contact)
+            } else if (holder is ListContactHolder) {
+                holder.bind(item.contact)
             }
         }
 
         override fun getItemCount(): Int = items.size
+    }
+
+    private inner class AvatarContactHolder(
+        itemView: View
+    ) : RecyclerView.ViewHolder(itemView) {
+        private val image: ImageView = itemView.findViewWithTag("avatarImage")
+        private val name: TextView = itemView.findViewWithTag("avatarName")
+
+        fun bind(contact: PhoneContact) {
+            itemView.background = gradientFor(contact)
+            itemView.setOnClickListener { showContactDialog(contact) }
+            name.text = contact.name
+            val avatar = contact.avatarUri
+            if (avatar == null) {
+                image.setImageDrawable(null)
+            } else {
+                image.setImageURI(cachedUri(avatar))
+            }
+        }
+    }
+
+    private inner class ListContactHolder(
+        itemView: View
+    ) : RecyclerView.ViewHolder(itemView) {
+        private val initial: TextView = itemView.findViewWithTag("listInitial")
+        private val name: TextView = itemView.findViewWithTag("listName")
+        private val phone: TextView = itemView.findViewWithTag("listPhone")
+
+        fun bind(contact: PhoneContact) {
+            itemView.setOnClickListener { showContactDialog(contact) }
+            initial.text = contact.name.take(1).uppercase()
+            initial.background = gradientFor(contact)
+            name.text = contact.name
+            phone.text = contact.phone
+        }
+    }
+
+    private fun createAvatarItemView(parent: ViewGroup): View {
+        return FrameLayout(parent.context).apply {
+            clipToOutline = true
+            elevation = dp(2).toFloat()
+            layoutParams = RecyclerView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(190)
+            ).apply {
+                setMargins(dp(5), dp(5), dp(5), dp(10))
+            }
+            addView(ImageView(context).apply {
+                tag = "avatarImage"
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                alpha = 0.96f
+            }, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(48) })
+            addView(TextView(context).apply {
+                tag = "avatarName"
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                textSize = 17f
+                typeface = Typeface.DEFAULT_BOLD
+                background = GradientDrawable().apply { setColor(0x88000000.toInt()) }
+            }, FrameLayout.LayoutParams(-1, dp(48), Gravity.BOTTOM))
+        }
+    }
+
+    private fun createListItemView(parent: ViewGroup): View {
+        return LinearLayout(parent.context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(Color.WHITE, 18)
+            elevation = dp(1).toFloat()
+            layoutParams = RecyclerView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, dp(5), 0, dp(10))
+            }
+            addView(TextView(context).apply {
+                tag = "listInitial"
+                gravity = Gravity.CENTER
+                textSize = 22f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+            }, LinearLayout.LayoutParams(dp(58), dp(58)).withRight(dp(14)))
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(context).apply {
+                    tag = "listName"
+                    textSize = 18f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(TEXT)
+                })
+                addView(TextView(context).apply {
+                    tag = "listPhone"
+                    textSize = 14f
+                    setTextColor(MUTED)
+                })
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
     }
 
     private fun showContactDialog(contact: PhoneContact) {
@@ -659,6 +749,10 @@ class MainActivity : Activity() {
     }
 
     private fun PhoneContact.displayName(): String = name.ifBlank { phone }
+
+    private fun cachedUri(value: String): Uri {
+        return imageUriCache.getOrPut(value) { Uri.parse(value) }
+    }
 
     private fun View.withBottomMargin(margin: Int): View {
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = margin }
