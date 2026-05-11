@@ -30,6 +30,7 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import java.io.ByteArrayOutputStream
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -503,8 +504,9 @@ class MainActivity : Activity() {
     }
 
     private fun importFromPhoneContacts() {
-        val existingPhones = contacts.map { normalizePhone(it.phone) }.toMutableSet()
+        val existingByPhone = contacts.associateBy { normalizePhone(it.phone) }.toMutableMap()
         var imported = 0
+        var avatarUpdated = 0
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
             ContactsContract.CommonDataKinds.Phone.NUMBER,
@@ -523,26 +525,46 @@ class MainActivity : Activity() {
             while (cursor.moveToNext()) {
                 val phone = cursor.getString(phoneIndex)?.trim().orEmpty()
                 val normalized = normalizePhone(phone)
-                if (normalized.isEmpty() || existingPhones.contains(normalized)) continue
+                if (normalized.isEmpty()) continue
+                val phoneAvatar = cursor.getString(photoIndex)
+                val existing = existingByPhone[normalized]
+                if (existing != null) {
+                    if (existing.avatarUri == null && !phoneAvatar.isNullOrBlank()) {
+                        val updated = existing.copy(avatarUri = phoneAvatar)
+                        contacts.removeAll { it.id == existing.id }
+                        contacts.add(updated)
+                        existingByPhone[normalized] = updated
+                        avatarUpdated++
+                    }
+                    continue
+                }
                 contacts.add(
                     PhoneContact(
                         name = cursor.getString(nameIndex)?.trim().orEmpty().ifBlank { phone },
                         phone = phone,
-                        avatarUri = cursor.getString(photoIndex)
+                        avatarUri = phoneAvatar
                     )
                 )
-                existingPhones.add(normalized)
+                existingByPhone[normalized] = contacts.last()
                 imported++
             }
         }
         saveContacts()
-        toast("已导入 $imported 个联系人")
+        toast("已导入 $imported 个联系人，补齐 $avatarUpdated 个头像")
         showContacts()
     }
 
     private fun exportToPhoneContacts() {
         var exported = 0
         for (contact in contacts) {
+            val rawContactId = findRawContactIdByPhone(contact.phone)
+            if (rawContactId != null) {
+                if (contact.avatarUri != null && upsertSystemContactPhoto(rawContactId, contact.avatarUri)) {
+                    exported++
+                }
+                continue
+            }
+
             val operations = arrayListOf<ContentProviderOperation>()
             operations.add(
                 ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
@@ -565,6 +587,15 @@ class MainActivity : Activity() {
                     .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE)
                     .build()
             )
+            avatarBytes(contact.avatarUri)?.let { bytes ->
+                operations.add(
+                    ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                        .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                        .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Photo.CONTENT_ITEM_TYPE)
+                        .withValue(ContactsContract.CommonDataKinds.Photo.PHOTO, bytes)
+                        .build()
+                )
+            }
             try {
                 contentResolver.applyBatch(ContactsContract.AUTHORITY, operations)
                 exported++
@@ -572,6 +603,83 @@ class MainActivity : Activity() {
             }
         }
         toast("已写入 $exported 个联系人到手机通讯录")
+    }
+
+    private fun findRawContactIdByPhone(phone: String): Long? {
+        val target = normalizePhone(phone)
+        if (target.isEmpty()) return null
+        val projection = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.NUMBER,
+            ContactsContract.CommonDataKinds.Phone.RAW_CONTACT_ID
+        )
+        contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            projection,
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val phoneIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            val rawIdIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.RAW_CONTACT_ID)
+            while (cursor.moveToNext()) {
+                if (normalizePhone(cursor.getString(phoneIndex).orEmpty()) == target) {
+                    return cursor.getLong(rawIdIndex)
+                }
+            }
+        }
+        return null
+    }
+
+    private fun upsertSystemContactPhoto(rawContactId: Long, avatarUri: String): Boolean {
+        val bytes = avatarBytes(avatarUri) ?: return false
+        val dataId = findPhotoDataId(rawContactId)
+        return try {
+            val operations = if (dataId != null) {
+                arrayListOf(
+                    ContentProviderOperation.newUpdate(ContactsContract.Data.CONTENT_URI)
+                        .withSelection("${ContactsContract.Data._ID}=?", arrayOf(dataId.toString()))
+                        .withValue(ContactsContract.CommonDataKinds.Photo.PHOTO, bytes)
+                        .build()
+                )
+            } else {
+                arrayListOf(
+                    ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                        .withValue(ContactsContract.Data.RAW_CONTACT_ID, rawContactId)
+                        .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Photo.CONTENT_ITEM_TYPE)
+                        .withValue(ContactsContract.CommonDataKinds.Photo.PHOTO, bytes)
+                        .build()
+                )
+            }
+            contentResolver.applyBatch(ContactsContract.AUTHORITY, operations)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun findPhotoDataId(rawContactId: Long): Long? {
+        val projection = arrayOf(ContactsContract.Data._ID)
+        val selection = "${ContactsContract.Data.RAW_CONTACT_ID}=? AND ${ContactsContract.Data.MIMETYPE}=?"
+        val args = arrayOf(rawContactId.toString(), ContactsContract.CommonDataKinds.Photo.CONTENT_ITEM_TYPE)
+        contentResolver.query(ContactsContract.Data.CONTENT_URI, projection, selection, args, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                return cursor.getLong(cursor.getColumnIndexOrThrow(ContactsContract.Data._ID))
+            }
+        }
+        return null
+    }
+
+    private fun avatarBytes(avatarUri: String?): ByteArray? {
+        if (avatarUri.isNullOrBlank()) return null
+        return try {
+            val bitmap = decodeAvatarThumbnail(avatarUri) ?: return null
+            ByteArrayOutputStream().use { output ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 88, output)
+                output.toByteArray()
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun exportVcfFile() {
