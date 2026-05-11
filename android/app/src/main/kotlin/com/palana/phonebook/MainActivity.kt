@@ -49,6 +49,9 @@ private data class ContactListItem(
 class MainActivity : Activity() {
     private val contacts = mutableListOf<PhoneContact>()
     private lateinit var content: FrameLayout
+    private lateinit var recyclerView: RecyclerView
+    private lateinit var contactAdapter: ContactAdapter
+    private lateinit var contactLayoutManager: GridLayoutManager
     private var pendingCallNumber: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,7 +68,7 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == EDIT_CONTACT_REQUEST && resultCode == RESULT_OK) {
             loadContacts()
-            showContacts()
+            updateContactList()
         }
     }
 
@@ -158,23 +161,46 @@ class MainActivity : Activity() {
                 .filter { it.avatarUri == null }
                 .map { ContactListItem(it, false) }
 
-        val adapter = ContactAdapter(items)
-        val layoutManager = GridLayoutManager(this, 2).apply {
+        contactAdapter = ContactAdapter(items)
+        contactLayoutManager = GridLayoutManager(this, 2).apply {
             spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
                 override fun getSpanSize(position: Int): Int {
-                    return if (items[position].hasAvatar) 1 else 2
+                    return if (contactAdapter.itemAt(position).hasAvatar) 1 else 2
                 }
             }
         }
 
-        content.addView(RecyclerView(this).apply {
+        recyclerView = RecyclerView(this).apply {
             setPadding(dp(16), dp(16), dp(16), dp(28))
             clipToPadding = false
-            this.layoutManager = layoutManager
-            this.adapter = adapter
+            layoutManager = contactLayoutManager
+            adapter = contactAdapter
             setHasFixedSize(false)
             itemAnimator = null
-        }, FrameLayout.LayoutParams(-1, -1))
+        }
+        content.addView(recyclerView, FrameLayout.LayoutParams(-1, -1))
+    }
+
+    private fun updateContactList() {
+        val items = buildContactItems()
+        if (items.isEmpty()) {
+            showContacts()
+            return
+        }
+        if (!::contactAdapter.isInitialized || !::recyclerView.isInitialized || recyclerView.parent == null) {
+            showContacts()
+            return
+        }
+        contactAdapter.updateItems(items)
+    }
+
+    private fun buildContactItems(): List<ContactListItem> {
+        return contacts
+            .filter { it.avatarUri != null }
+            .map { ContactListItem(it, true) } +
+            contacts
+                .filter { it.avatarUri == null }
+                .map { ContactListItem(it, false) }
     }
 
     private fun visualCard(contact: PhoneContact): View {
@@ -235,8 +261,18 @@ class MainActivity : Activity() {
     }
 
     private inner class ContactAdapter(
-        private val items: List<ContactListItem>
+        items: List<ContactListItem>
     ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+        private val items = items.toMutableList()
+
+        fun itemAt(position: Int): ContactListItem = items[position]
+
+        fun updateItems(newItems: List<ContactListItem>) {
+            items.clear()
+            items.addAll(newItems)
+            notifyDataSetChanged()
+        }
+
         override fun getItemViewType(position: Int): Int {
             return if (items[position].hasAvatar) VIEW_TYPE_AVATAR else VIEW_TYPE_LIST
         }
