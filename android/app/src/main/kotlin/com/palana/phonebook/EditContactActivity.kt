@@ -58,13 +58,13 @@ class EditContactActivity : Activity() {
 
     private fun buildPage() {
         val nameInput = EditText(this).apply {
-            hint = "姓名"
+            hint = "\u59d3\u540d"
             setText(intent.getStringExtra("name").orEmpty())
             textSize = 18f
             setSingleLine(true)
         }
         val phoneInput = EditText(this).apply {
-            hint = "手机号"
+            hint = "\u624b\u673a\u53f7"
             setText(intent.getStringExtra("phone").orEmpty())
             textSize = 18f
             inputType = android.text.InputType.TYPE_CLASS_PHONE
@@ -92,14 +92,14 @@ class EditContactActivity : Activity() {
             elevation = dp(2).toFloat()
         }
         topBar.addView(TextView(this).apply {
-            text = "‹"
+            text = "<"
             textSize = 36f
             gravity = Gravity.CENTER
             setTextColor(BRAND)
             setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(dp(48), dp(52)))
         topBar.addView(TextView(this).apply {
-            text = if (contactId == null) "新增联系人" else "编辑联系人"
+            text = if (contactId == null) "\u65b0\u589e\u8054\u7cfb\u4eba" else "\u7f16\u8f91\u8054\u7cfb\u4eba"
             textSize = 22f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(TEXT)
@@ -116,8 +116,8 @@ class EditContactActivity : Activity() {
         body.addView(phoneInput, LinearLayout.LayoutParams(-1, dp(62)).withBottom(dp(24)))
 
         val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        actions.addView(secondaryButton("取消") { finish() }, LinearLayout.LayoutParams(0, dp(56), 1f).withRight(dp(10)))
-        actions.addView(primaryButton("保存") {
+        actions.addView(secondaryButton("\u53d6\u6d88") { finish() }, LinearLayout.LayoutParams(0, dp(56), 1f).withRight(dp(10)))
+        actions.addView(primaryButton("\u4fdd\u5b58") {
             saveContact(nameInput.text.toString().trim(), phoneInput.text.toString().trim())
         }, LinearLayout.LayoutParams(0, dp(56), 1f))
         body.addView(actions)
@@ -128,8 +128,12 @@ class EditContactActivity : Activity() {
     }
 
     private fun saveContact(name: String, phone: String) {
-        if (name.isEmpty() || phone.isEmpty()) {
-            Toast.makeText(this, "请填写姓名和手机号", Toast.LENGTH_SHORT).show()
+        if (phone.isEmpty()) {
+            Toast.makeText(this, "\u8bf7\u586b\u5199\u624b\u673a\u53f7", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (name.isEmpty() && selectedAvatarUri.isNullOrBlank()) {
+            Toast.makeText(this, "\u8bf7\u586b\u5199\u59d3\u540d\u6216\u9009\u62e9\u5934\u50cf", Toast.LENGTH_SHORT).show()
             return
         }
         val contacts = loadContacts().toMutableList()

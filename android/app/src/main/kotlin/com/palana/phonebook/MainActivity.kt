@@ -268,8 +268,8 @@ class MainActivity : Activity() {
     }
 
     private fun contactNameComparator(): Comparator<PhoneContact> {
-        return compareBy<PhoneContact> { nameInitial(it.name) }
-            .thenComparator { left, right -> chineseCollator.compare(left.name, right.name) }
+        return compareBy<PhoneContact> { nameInitial(it.displayName()) }
+            .thenComparator { left, right -> chineseCollator.compare(left.displayName(), right.displayName()) }
             .thenBy { it.phone }
     }
 
@@ -404,7 +404,7 @@ class MainActivity : Activity() {
         fun bind(contact: PhoneContact) {
             itemView.background = gradientFor(contact)
             itemView.setOnClickListener { showContactDialog(contact) }
-            name.text = contact.name
+            name.text = contact.displayName()
             val avatar = contact.avatarUri
             if (avatar == null) {
                 image.tag = null
@@ -418,15 +418,13 @@ class MainActivity : Activity() {
     private inner class ListContactHolder(
         itemView: View
     ) : RecyclerView.ViewHolder(itemView) {
-        private val initial: TextView = itemView.findViewWithTag("listInitial")
         private val name: TextView = itemView.findViewWithTag("listName")
         private val phone: TextView = itemView.findViewWithTag("listPhone")
 
         fun bind(contact: PhoneContact) {
             itemView.setOnClickListener { showContactDialog(contact) }
-            initial.text = contact.name.take(1).uppercase()
-            initial.background = gradientFor(contact)
-            name.text = contact.name
+            name.text = contact.displayName()
+            name.background = gradientFor(contact)
             phone.text = contact.phone
         }
     }
@@ -461,36 +459,31 @@ class MainActivity : Activity() {
         return LinearLayout(parent.context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setPadding(dp(10), dp(8), dp(12), dp(8))
             background = rounded(Color.WHITE, 18)
             elevation = dp(1).toFloat()
             layoutParams = RecyclerView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, dp(5), 0, dp(10))
+                setMargins(0, dp(2), 0, dp(5))
             }
             addView(TextView(context).apply {
-                tag = "listInitial"
+                tag = "listName"
                 gravity = Gravity.CENTER
-                textSize = 22f
+                textSize = 16f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(Color.WHITE)
-            }, LinearLayout.LayoutParams(dp(58), dp(58)).withRight(dp(14)))
-            addView(LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(TextView(context).apply {
-                    tag = "listName"
-                    textSize = 18f
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(TEXT)
-                })
-                addView(TextView(context).apply {
-                    tag = "listPhone"
-                    textSize = 14f
-                    setTextColor(MUTED)
-                })
-            }, LinearLayout.LayoutParams(0, -2, 1f))
+                setSingleLine(true)
+                setPadding(dp(10), 0, dp(10), 0)
+            }, LinearLayout.LayoutParams(0, dp(40), 1f).withRight(dp(12)))
+            addView(TextView(context).apply {
+                tag = "listPhone"
+                textSize = 16f
+                gravity = Gravity.CENTER_VERTICAL or Gravity.RIGHT
+                setSingleLine(true)
+                setTextColor(MUTED)
+            }, LinearLayout.LayoutParams(0, dp(40), 1.15f))
         }
     }
 
@@ -521,7 +514,7 @@ class MainActivity : Activity() {
             background = gradientFor(contact)
         }, LinearLayout.LayoutParams(dp(136), dp(136)).withBottom(dp(14)))
         body.addView(TextView(this).apply {
-            text = contact.name
+            text = contact.displayName()
             textSize = 24f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(TEXT)
