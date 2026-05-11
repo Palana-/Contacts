@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
@@ -17,7 +18,6 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridLayout
-import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -28,6 +28,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
+import kotlin.math.abs
 
 data class PhoneContact(
     val id: String = UUID.randomUUID().toString(),
@@ -40,10 +41,10 @@ data class PhoneContact(
 
 class MainActivity : Activity() {
     private val contacts = mutableListOf<PhoneContact>()
-    private lateinit var root: LinearLayout
+    private lateinit var shell: FrameLayout
+    private lateinit var page: LinearLayout
     private lateinit var content: FrameLayout
-    private lateinit var title: TextView
-    private lateinit var addButton: ImageButton
+    private lateinit var fab: TextView
 
     private var currentTab = Tab.CONTACTS
     private var editingContact: PhoneContact? = null
@@ -63,13 +64,13 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() {
-        if (editingContact != null || title.text == "新增联系人") {
+        if (editingContact != null) {
             selectedAvatarUri = null
             editingContact = null
             showContacts()
-        } else {
-            super.onBackPressed()
+            return
         }
+        super.onBackPressed()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -90,97 +91,87 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
         when (requestCode) {
-            CALL_PERMISSION_REQUEST -> {
-                if (granted) pendingCallNumber?.let { makeCallNow(it) }
-                else toast("需要电话权限才能直接拨号")
-            }
-            READ_CONTACTS_REQUEST -> {
-                if (granted) importFromPhoneContacts()
-                else toast("需要通讯录读取权限")
-            }
-            WRITE_CONTACTS_REQUEST -> {
-                if (granted) exportToPhoneContacts()
-                else toast("需要通讯录写入权限")
-            }
+            CALL_PERMISSION_REQUEST -> if (granted) pendingCallNumber?.let { makeCallNow(it) } else toast("需要电话权限才能直接拨号")
+            READ_CONTACTS_REQUEST -> if (granted) importFromPhoneContacts() else toast("需要通讯录读取权限")
+            WRITE_CONTACTS_REQUEST -> if (granted) exportToPhoneContacts() else toast("需要通讯录写入权限")
         }
     }
 
     private fun buildShell() {
-        root = LinearLayout(this).apply {
+        shell = FrameLayout(this).apply { setBackgroundColor(SURFACE) }
+        page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(SURFACE)
         }
-
-        val toolbar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(10), dp(12), dp(8))
-            setBackgroundColor(Color.WHITE)
-        }
-        title = TextView(this).apply {
-            text = "电话本"
-            textSize = 24f
-            setTextColor(TEXT)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        addButton = ImageButton(this).apply {
-            setImageResource(android.R.drawable.ic_input_add)
-            setColorFilter(Color.WHITE)
-            setBackgroundColor(BRAND)
-            setOnClickListener { showEditPage(null) }
-            contentDescription = "新增联系人"
-        }
-        toolbar.addView(title, LinearLayout.LayoutParams(0, dp(50), 1f))
-        toolbar.addView(addButton, LinearLayout.LayoutParams(dp(48), dp(48)))
-
         content = FrameLayout(this)
-        val bottomNav = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(6), dp(6), dp(6), dp(8))
-            setBackgroundColor(Color.WHITE)
-        }
-        bottomNav.addView(navButton("通讯录", Tab.CONTACTS), LinearLayout.LayoutParams(0, dp(58), 1f))
-        bottomNav.addView(navButton("最近", Tab.RECENT), LinearLayout.LayoutParams(0, dp(58), 1f))
-        bottomNav.addView(navButton("更多", Tab.MORE), LinearLayout.LayoutParams(0, dp(58), 1f))
+        page.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+        page.addView(bottomNav())
+        shell.addView(page, FrameLayout.LayoutParams(-1, -1))
 
-        root.addView(toolbar)
-        root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(bottomNav)
-        setContentView(root)
+        fab = TextView(this).apply {
+            text = "+"
+            textSize = 42f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = rounded(BRAND, 22)
+            elevation = dp(10).toFloat()
+            setOnClickListener { showEditPage(null) }
+        }
+        val fabParams = FrameLayout.LayoutParams(dp(74), dp(74), Gravity.BOTTOM or Gravity.RIGHT).apply {
+            rightMargin = dp(24)
+            bottomMargin = dp(76)
+        }
+        shell.addView(fab, fabParams)
+        setContentView(shell)
     }
 
-    private fun navButton(label: String, tab: Tab): TextView {
-        return TextView(this).apply {
-            text = label
+    private fun bottomNav(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            textSize = 16f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(if (tab == currentTab) BRAND else MUTED)
+            setPadding(dp(8), dp(6), dp(8), dp(8))
+            setBackgroundColor(Color.WHITE)
+            elevation = dp(8).toFloat()
+            addView(navItem("▣", "通讯录", Tab.CONTACTS), LinearLayout.LayoutParams(0, dp(70), 1f))
+            addView(navItem("◷", "最近", Tab.RECENT), LinearLayout.LayoutParams(0, dp(70), 1f))
+            addView(navItem("⋯", "更多", Tab.MORE), LinearLayout.LayoutParams(0, dp(70), 1f))
+        }
+    }
+
+    private fun navItem(icon: String, label: String, tab: Tab): LinearLayout {
+        val selected = currentTab == tab
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
             setOnClickListener {
                 currentTab = tab
-                rebuildForCurrentTab()
+                buildShell()
+                refreshCurrentTab()
             }
-        }
-    }
-
-    private fun rebuildForCurrentTab() {
-        buildShell()
-        when (currentTab) {
-            Tab.CONTACTS -> showContacts()
-            Tab.RECENT -> showRecent()
-            Tab.MORE -> showMore()
+            addView(TextView(context).apply {
+                text = icon
+                textSize = 30f
+                gravity = Gravity.CENTER
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(if (selected) BRAND else MUTED)
+            })
+            addView(TextView(context).apply {
+                text = label
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setTextColor(if (selected) BRAND else MUTED)
+            })
         }
     }
 
     private fun showContacts() {
         currentTab = Tab.CONTACTS
-        title.text = "电话本"
-        addButton.visibility = View.VISIBLE
+        editingContact = null
+        fab.visibility = View.VISIBLE
         content.removeAllViews()
 
         if (contacts.isEmpty()) {
-            content.addView(emptyView("还没有联系人", "点右上角 + 添加第一个联系人"))
+            content.addView(emptyView("还没有联系人", "点右下角 + 添加第一个联系人"))
             return
         }
 
@@ -188,18 +179,17 @@ class MainActivity : Activity() {
         val withoutAvatar = contacts.filter { it.avatarUri == null }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(12), dp(12), dp(24))
+            setPadding(dp(16), dp(18), dp(16), dp(96))
         }
 
         if (withAvatar.isNotEmpty()) {
-            body.addView(sectionTitle("头像联系人"))
             val grid = GridLayout(this).apply { columnCount = 2 }
-            withAvatar.forEach { grid.addView(avatarCard(it), gridParams()) }
+            withAvatar.forEach { grid.addView(visualCard(it), gridParams()) }
             body.addView(grid)
         }
 
         if (withoutAvatar.isNotEmpty()) {
-            body.addView(sectionTitle("全部联系人"))
+            body.addView(sectionTitle(if (withAvatar.isEmpty()) "通讯录" else "无头像联系人"))
             withoutAvatar.forEach { body.addView(listRow(it)) }
         }
 
@@ -208,47 +198,49 @@ class MainActivity : Activity() {
 
     private fun showRecent() {
         currentTab = Tab.RECENT
-        title.text = "最近"
-        addButton.visibility = View.GONE
+        fab.visibility = View.GONE
         content.removeAllViews()
-
         val recent = contacts.filter { it.recentAt > 0L }.sortedByDescending { it.recentAt }
         if (recent.isEmpty()) {
             content.addView(emptyView("暂无最近通话", "拨号后会自动显示在这里"))
             return
         }
-
-        val body = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(12), dp(12), dp(24))
-        }
+        val body = pageBody("最近")
         recent.forEach { body.addView(listRow(it)) }
         content.addView(ScrollView(this).apply { addView(body) })
     }
 
     private fun showMore() {
         currentTab = Tab.MORE
-        title.text = "更多"
-        addButton.visibility = View.GONE
+        fab.visibility = View.GONE
         content.removeAllViews()
-
-        val body = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-        }
+        val body = pageBody("更多")
         body.addView(actionCard("从手机通讯录导入", "读取手机联系人并加入电话本") { requestReadContactsThenImport() })
-        body.addView(actionCard("写入手机通讯录", "把电话本里的联系人保存到系统通讯录") { requestWriteContactsThenExport() })
+        body.addView(actionCard("写入手机通讯录", "把电话本联系人保存到系统通讯录") { requestWriteContactsThenExport() })
         body.addView(actionCard("导出 VCF 文件", "生成 contacts.vcf 并调用系统分享") { exportVcfFile() })
         body.addView(actionCard("导出 CSV 文件", "生成 contacts.csv 并调用系统分享") { exportCsvFile() })
         body.addView(infoCard("当前版本", "1.0.0"))
         content.addView(ScrollView(this).apply { addView(body) })
     }
 
+    private fun pageBody(heading: String): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(24))
+            addView(TextView(context).apply {
+                text = heading
+                textSize = 28f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(TEXT)
+                setPadding(0, 0, 0, dp(18))
+            })
+        }
+    }
+
     private fun showEditPage(contact: PhoneContact?) {
-        editingContact = contact
-        if (selectedAvatarUri == null) selectedAvatarUri = contact?.avatarUri
-        title.text = if (contact == null) "新增联系人" else "编辑联系人"
-        addButton.visibility = View.GONE
+        editingContact = contact ?: PhoneContact(name = "", phone = "")
+        if (contact != null && selectedAvatarUri == null) selectedAvatarUri = contact.avatarUri
+        fab.visibility = View.GONE
         content.removeAllViews()
 
         val nameInput = EditText(this).apply {
@@ -265,20 +257,16 @@ class MainActivity : Activity() {
             setSingleLine(true)
         }
         val avatar = ImageView(this).apply {
-            setBackgroundColor(Color.WHITE)
+            background = rounded(Color.WHITE, 24)
             scaleType = ImageView.ScaleType.CENTER_CROP
             selectedAvatarUri?.let { setImageURI(Uri.parse(it)) }
             if (selectedAvatarUri == null) setImageResource(android.R.drawable.ic_menu_camera)
             setOnClickListener { pickImage() }
-            contentDescription = "选择头像"
         }
 
-        val body = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(20), dp(20), dp(20), dp(20))
-        }
-        body.addView(avatar, LinearLayout.LayoutParams(dp(128), dp(128)).withBottom(dp(20)))
+        val body = pageBody(if (contact == null) "新增联系人" else "编辑联系人")
+        body.gravity = Gravity.CENTER_HORIZONTAL
+        body.addView(avatar, LinearLayout.LayoutParams(dp(132), dp(132)).withBottom(dp(20)))
         body.addView(nameInput, LinearLayout.LayoutParams(-1, dp(60)).withBottom(dp(12)))
         body.addView(phoneInput, LinearLayout.LayoutParams(-1, dp(60)).withBottom(dp(24)))
 
@@ -287,7 +275,7 @@ class MainActivity : Activity() {
             selectedAvatarUri = null
             editingContact = null
             showContacts()
-        }, LinearLayout.LayoutParams(0, dp(54), 1f).withRight(dp(10)))
+        }, LinearLayout.LayoutParams(0, dp(56), 1f).withRight(dp(10)))
         actions.addView(primaryButton("保存") {
             val name = nameInput.text.toString().trim()
             val phone = phoneInput.text.toString().trim()
@@ -309,17 +297,132 @@ class MainActivity : Activity() {
             selectedAvatarUri = null
             editingContact = null
             showContacts()
-        }, LinearLayout.LayoutParams(0, dp(54), 1f))
+        }, LinearLayout.LayoutParams(0, dp(56), 1f))
         body.addView(actions)
         content.addView(ScrollView(this).apply { addView(body) })
     }
 
-    private fun requestReadContactsThenImport() {
-        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
-            importFromPhoneContacts()
-        } else {
-            requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), READ_CONTACTS_REQUEST)
+    private fun visualCard(contact: PhoneContact): View {
+        val frame = FrameLayout(this).apply {
+            background = gradientFor(contact)
+            clipToOutline = true
+            setOnClickListener { showContactDialog(contact) }
+            elevation = dp(2).toFloat()
         }
+        val image = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setImageURI(Uri.parse(contact.avatarUri))
+            alpha = 0.96f
+        }
+        frame.addView(image, FrameLayout.LayoutParams(-1, -1))
+        frame.addView(TextView(this).apply {
+            text = contact.name.take(1).uppercase()
+            textSize = 52f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+        }, FrameLayout.LayoutParams(-1, -1))
+        frame.addView(TextView(this).apply {
+            text = contact.name
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            background = GradientDrawable().apply {
+                setColor(0x88000000.toInt())
+                cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)
+            }
+        }, FrameLayout.LayoutParams(-1, dp(48), Gravity.BOTTOM))
+        return frame
+    }
+
+    private fun listRow(contact: PhoneContact): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(Color.WHITE, 18)
+            elevation = dp(1).toFloat()
+            setOnClickListener { showContactDialog(contact) }
+        }
+        row.addView(TextView(this).apply {
+            text = contact.name.take(1).uppercase()
+            gravity = Gravity.CENTER
+            textSize = 22f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            background = gradientFor(contact)
+        }, LinearLayout.LayoutParams(dp(58), dp(58)).withRight(dp(14)))
+        row.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(context).apply {
+                text = contact.name
+                textSize = 18f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(TEXT)
+            })
+            addView(TextView(context).apply {
+                text = contact.phone
+                textSize = 14f
+                setTextColor(MUTED)
+            })
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        return row.withBottomMargin(dp(10))
+    }
+
+    private fun showContactDialog(contact: PhoneContact) {
+        val dialog = AlertDialog.Builder(this).create()
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(22), dp(20), dp(22), dp(22))
+            background = rounded(Color.WHITE, 26)
+        }
+        body.addView(TextView(this).apply {
+            text = contact.name.take(1).uppercase()
+            textSize = 56f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            background = gradientFor(contact)
+        }, LinearLayout.LayoutParams(dp(136), dp(136)).withBottom(dp(14)))
+        body.addView(TextView(this).apply {
+            text = contact.name
+            textSize = 24f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(TEXT)
+            gravity = Gravity.CENTER
+        })
+        body.addView(TextView(this).apply {
+            text = contact.phone
+            textSize = 17f
+            setTextColor(MUTED)
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(-1, -2).withBottom(dp(18)))
+        body.addView(primaryButton("拨号") {
+            dialog.dismiss()
+            callContact(contact)
+        }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
+        body.addView(secondaryButton("编辑") {
+            dialog.dismiss()
+            selectedAvatarUri = null
+            showEditPage(contact)
+        }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
+        body.addView(dangerButton("删除") {
+            dialog.dismiss()
+            contacts.removeAll { it.id == contact.id }
+            saveContacts()
+            refreshCurrentTab()
+        }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
+        body.addView(secondaryButton("返回") { dialog.dismiss() }, LinearLayout.LayoutParams(-1, dp(46)))
+        dialog.setView(body)
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.show()
+    }
+
+    private fun requestReadContactsThenImport() {
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) importFromPhoneContacts()
+        else requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), READ_CONTACTS_REQUEST)
     }
 
     private fun requestWriteContactsThenExport() {
@@ -327,11 +430,8 @@ class MainActivity : Activity() {
             toast("暂无联系人可写入")
             return
         }
-        if (checkSelfPermission(Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
-            exportToPhoneContacts()
-        } else {
-            requestPermissions(arrayOf(Manifest.permission.WRITE_CONTACTS), WRITE_CONTACTS_REQUEST)
-        }
+        if (checkSelfPermission(Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) exportToPhoneContacts()
+        else requestPermissions(arrayOf(Manifest.permission.WRITE_CONTACTS), WRITE_CONTACTS_REQUEST)
     }
 
     private fun importFromPhoneContacts() {
@@ -449,108 +549,13 @@ class MainActivity : Activity() {
         startActivity(Intent.createChooser(intent, "导出联系人"))
     }
 
-    private fun avatarCard(contact: PhoneContact): View {
-        val frame = FrameLayout(this).apply {
-            setBackgroundColor(Color.WHITE)
-            setPadding(dp(2), dp(2), dp(2), dp(2))
-            setOnClickListener { showContactDialog(contact) }
-        }
-        val image = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            setImageURI(Uri.parse(contact.avatarUri))
-        }
-        val label = TextView(this).apply {
-            text = contact.name
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
-            setBackgroundColor(0x99000000.toInt())
-            setPadding(dp(8), dp(8), dp(8), dp(8))
-        }
-        frame.addView(image, FrameLayout.LayoutParams(-1, -1))
-        frame.addView(label, FrameLayout.LayoutParams(-1, dp(42), Gravity.BOTTOM))
-        return frame
-    }
-
-    private fun listRow(contact: PhoneContact): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            setBackgroundColor(Color.WHITE)
-            setOnClickListener { showContactDialog(contact) }
-        }
-        row.addView(TextView(this).apply {
-            text = contact.name
-            textSize = 18f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(TEXT)
-        })
-        row.addView(TextView(this).apply {
-            text = contact.phone
-            textSize = 15f
-            setTextColor(MUTED)
-        })
-        return row.withBottomMargin(dp(10))
-    }
-
-    private fun showContactDialog(contact: PhoneContact) {
-        val dialog = AlertDialog.Builder(this).create()
-        val body = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(22), dp(16), dp(22), dp(22))
-            setBackgroundColor(Color.WHITE)
-        }
-
-        body.addView(secondaryButton("返回") { dialog.dismiss() }, LinearLayout.LayoutParams(-1, dp(46)).withBottom(dp(12)))
-        body.addView(ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            if (contact.avatarUri != null) setImageURI(Uri.parse(contact.avatarUri))
-            else setImageResource(android.R.drawable.sym_def_app_icon)
-        }, LinearLayout.LayoutParams(dp(132), dp(132)).withBottom(dp(14)))
-        body.addView(TextView(this).apply {
-            text = contact.name
-            textSize = 24f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(TEXT)
-            gravity = Gravity.CENTER
-        })
-        body.addView(TextView(this).apply {
-            text = contact.phone
-            textSize = 18f
-            setTextColor(MUTED)
-            gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(-1, -2).withBottom(dp(18)))
-        body.addView(primaryButton("拨号") {
-            dialog.dismiss()
-            callContact(contact)
-        }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
-        body.addView(secondaryButton("编辑") {
-            dialog.dismiss()
-            selectedAvatarUri = null
-            showEditPage(contact)
-        }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
-        body.addView(dangerButton("删除") {
-            dialog.dismiss()
-            contacts.removeAll { it.id == contact.id }
-            saveContacts()
-            refreshCurrentTab()
-        }, LinearLayout.LayoutParams(-1, dp(54)))
-
-        dialog.setView(body)
-        dialog.setCanceledOnTouchOutside(true)
-        dialog.show()
-    }
-
     private fun callContact(contact: PhoneContact) {
         val updated = contact.copy(recentAt = System.currentTimeMillis())
         contacts.removeAll { it.id == contact.id }
         contacts.add(updated)
         saveContacts()
-        if (checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-            makeCallNow(contact.phone)
-        } else {
+        if (checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) makeCallNow(contact.phone)
+        else {
             pendingCallNumber = contact.phone
             requestPermissions(arrayOf(Manifest.permission.CALL_PHONE), CALL_PERMISSION_REQUEST)
         }
@@ -621,10 +626,10 @@ class MainActivity : Activity() {
     private fun sectionTitle(text: String): TextView {
         return TextView(this).apply {
             this.text = text
-            textSize = 17f
+            textSize = 16f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(TEXT)
-            setPadding(dp(4), dp(10), dp(4), dp(8))
+            setPadding(dp(4), dp(12), dp(4), dp(10))
         }
     }
 
@@ -635,7 +640,7 @@ class MainActivity : Activity() {
             setPadding(dp(24), dp(24), dp(24), dp(24))
             addView(TextView(context).apply {
                 text = heading
-                textSize = 20f
+                textSize = 22f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(TEXT)
                 gravity = Gravity.CENTER
@@ -687,7 +692,8 @@ class MainActivity : Activity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(14))
-            setBackgroundColor(Color.WHITE)
+            background = rounded(Color.WHITE, 18)
+            elevation = dp(1).toFloat()
         }
     }
 
@@ -696,7 +702,7 @@ class MainActivity : Activity() {
             text = label
             textSize = 17f
             setTextColor(Color.WHITE)
-            setBackgroundColor(BRAND)
+            background = rounded(BRAND, 16)
             setOnClickListener { onClick() }
         }
     }
@@ -706,7 +712,7 @@ class MainActivity : Activity() {
             text = label
             textSize = 17f
             setTextColor(BRAND)
-            setBackgroundColor(0xFFE0F2F1.toInt())
+            background = rounded(0xFFE0F2F1.toInt(), 16)
             setOnClickListener { onClick() }
         }
     }
@@ -716,7 +722,7 @@ class MainActivity : Activity() {
             text = label
             textSize = 17f
             setTextColor(Color.WHITE)
-            setBackgroundColor(0xFFDC2626.toInt())
+            background = rounded(0xFFDC2626.toInt(), 16)
             setOnClickListener { onClick() }
         }
     }
@@ -724,11 +730,35 @@ class MainActivity : Activity() {
     private fun gridParams(): GridLayout.LayoutParams {
         return GridLayout.LayoutParams().apply {
             width = 0
-            height = dp(180)
+            height = dp(190)
             columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-            setMargins(dp(4), dp(4), dp(4), dp(8))
+            setMargins(dp(5), dp(5), dp(5), dp(10))
         }
     }
+
+    private fun rounded(color: Int, radius: Int): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(radius).toFloat()
+        }
+    }
+
+    private fun gradientFor(contact: PhoneContact): GradientDrawable {
+        val palettes = arrayOf(
+            intArrayOf(0xFFEC4899.toInt(), 0xFFF472B6.toInt()),
+            intArrayOf(0xFF06B6D4.toInt(), 0xFF67E8F9.toInt()),
+            intArrayOf(0xFFF59E0B.toInt(), 0xFFFDE047.toInt()),
+            intArrayOf(0xFF10B981.toInt(), 0xFF34D399.toInt()),
+            intArrayOf(0xFF0891B2.toInt(), 0xFF22D3EE.toInt()),
+            intArrayOf(0xFF7C3AED.toInt(), 0xFFA78BFA.toInt())
+        )
+        val colors = palettes[abs(contact.displayName().hashCode()) % palettes.size]
+        return GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, colors).apply {
+            cornerRadius = dp(18).toFloat()
+        }
+    }
+
+    private fun PhoneContact.displayName(): String = name.ifBlank { phone }
 
     private fun View.withBottomMargin(margin: Int): View {
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = margin }
@@ -763,7 +793,7 @@ class MainActivity : Activity() {
         private const val CALL_PERMISSION_REQUEST = 1002
         private const val READ_CONTACTS_REQUEST = 1003
         private const val WRITE_CONTACTS_REQUEST = 1004
-        private const val BRAND = 0xFF0F766E.toInt()
+        private const val BRAND = 0xFF0891B2.toInt()
         private const val TEXT = 0xFF0F172A.toInt()
         private const val MUTED = 0xFF64748B.toInt()
         private const val SURFACE = 0xFFF8FAFC.toInt()
