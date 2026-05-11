@@ -35,6 +35,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.util.concurrent.Executors
 import java.util.UUID
 import kotlin.math.abs
@@ -509,6 +510,7 @@ class MainActivity : Activity() {
         var imported = 0
         var avatarUpdated = 0
         val projection = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
             ContactsContract.CommonDataKinds.Phone.NUMBER,
             ContactsContract.CommonDataKinds.Phone.PHOTO_URI
@@ -520,10 +522,12 @@ class MainActivity : Activity() {
             null,
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
         )?.use { cursor ->
+            val contactIdIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
             val nameIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
             val phoneIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
             val photoIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.PHOTO_URI)
             while (cursor.moveToNext()) {
+                val systemContactId = cursor.getLong(contactIdIndex)
                 val phone = cursor.getString(phoneIndex)?.trim().orEmpty()
                 val normalized = normalizePhone(phone)
                 if (normalized.isEmpty()) continue
@@ -531,7 +535,7 @@ class MainActivity : Activity() {
                 val existing = existingByPhone[normalized]
                 if (existing != null) {
                     if (existing.avatarUri == null && !phoneAvatar.isNullOrBlank()) {
-                        val localAvatar = copyAvatarToPrivateFile(phoneAvatar, existing.id) ?: phoneAvatar
+                        val localAvatar = copyAvatarToPrivateFile(phoneAvatar, existing.id, systemContactId) ?: phoneAvatar
                         val updated = existing.copy(avatarUri = localAvatar)
                         contacts.removeAll { it.id == existing.id }
                         contacts.add(updated)
@@ -542,9 +546,9 @@ class MainActivity : Activity() {
                 }
                 val id = UUID.randomUUID().toString()
                 val localAvatar = if (!phoneAvatar.isNullOrBlank()) {
-                    copyAvatarToPrivateFile(phoneAvatar, id) ?: phoneAvatar
+                    copyAvatarToPrivateFile(phoneAvatar, id, systemContactId) ?: phoneAvatar
                 } else {
-                    null
+                    copyAvatarToPrivateFile(null, id, systemContactId)
                 }
                 contacts.add(
                     PhoneContact(
@@ -931,9 +935,13 @@ class MainActivity : Activity() {
         return BitmapFactory.decodeFile(path, options)
     }
 
-    private fun copyAvatarToPrivateFile(sourceUri: String, contactId: String): String? {
+    private fun copyAvatarToPrivateFile(sourceUri: String?, contactId: String, systemContactId: Long? = null): String? {
         return try {
-            val bitmap = decodeAvatarThumbnail(sourceUri) ?: return null
+            val bitmap = if (!sourceUri.isNullOrBlank()) {
+                decodeAvatarThumbnail(sourceUri)
+            } else {
+                null
+            } ?: decodeSystemContactPhoto(systemContactId) ?: return null
             val dir = File(filesDir, "avatars").apply { mkdirs() }
             val file = File(dir, "$contactId.jpg")
             FileOutputStream(file).use { output ->
@@ -943,6 +951,26 @@ class MainActivity : Activity() {
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun decodeSystemContactPhoto(systemContactId: Long?): Bitmap? {
+        if (systemContactId == null) return null
+        val contactUri = Uri.withAppendedPath(
+            ContactsContract.Contacts.CONTENT_URI,
+            systemContactId.toString()
+        )
+        return try {
+            openSystemContactPhotoStream(contactUri)?.use { stream ->
+                BitmapFactory.decodeStream(stream)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun openSystemContactPhotoStream(contactUri: Uri): InputStream? {
+        return ContactsContract.Contacts.openContactPhotoInputStream(contentResolver, contactUri, true)
+            ?: ContactsContract.Contacts.openContactPhotoInputStream(contentResolver, contactUri)
     }
 
     private fun decodeSampledBitmap(uri: Uri, reqWidth: Int, reqHeight: Int): Bitmap? {
