@@ -216,7 +216,8 @@ class MainActivity : Activity() {
             menu.add(syncTitle)
             menu.add(exportMigrationTitle)
             menu.add(importMigrationTitle)
-            menu.add("\u7248\u672c ${BuildConfig.VERSION_NAME}  \u7f16\u8bd1 ${BuildConfig.BUILD_TIME}").isEnabled = false
+            menu.add("\u7248\u672c ${BuildConfig.VERSION_NAME}").isEnabled = false
+            menu.add("\u7f16\u8bd1\u65f6\u95f4 ${BuildConfig.BUILD_TIME}").isEnabled = false
             setOnMenuItemClickListener {
                 when (it.title.toString()) {
                     importTitle -> requestReadContactsThenImport()
