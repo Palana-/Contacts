@@ -845,7 +845,7 @@ class MainActivity : Activity() {
             val file = writeExportFile("contacts.vcf", text)
             runOnUiThread {
                 hideProgress()
-                shareExportFile(file, "text/vcard")
+                shareExportFile(file, "text/vcard", "\u5bfc\u51fa\u8054\u7cfb\u4eba")
             }
         }
     }
@@ -864,7 +864,7 @@ class MainActivity : Activity() {
             val file = writeExportFile("contacts.csv", text)
             runOnUiThread {
                 hideProgress()
-                shareExportFile(file, "text/csv")
+                shareExportFile(file, "text/csv", "\u5bfc\u51fa\u8054\u7cfb\u4eba")
             }
         }
     }
@@ -882,7 +882,7 @@ class MainActivity : Activity() {
                 if (file == null) {
                     toast("\u5bfc\u51fa\u8fc1\u79fb\u5305\u5931\u8d25")
                 } else {
-                    shareExportFile(file, "application/zip")
+                    shareExportFile(file, "application/zip", "\u9009\u62e9\u8fc1\u79fb\u5305\u7684\u53d1\u9001\u6216\u4fdd\u5b58\u65b9\u5f0f")
                 }
             }
         }
@@ -1033,15 +1033,14 @@ class MainActivity : Activity() {
         return file
     }
 
-    private fun shareExportFile(file: File, mimeType: String) {
+    private fun shareExportFile(file: File, mimeType: String, chooserTitle: String) {
         val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = mimeType
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        toast("\u5df2\u751f\u6210\uff1a${file.absolutePath}")
-        startActivity(Intent.createChooser(intent, "\u5bfc\u51fa\u8054\u7cfb\u4eba"))
+        startActivity(Intent.createChooser(intent, chooserTitle))
     }
 
     private fun migrationAvatarName(contact: PhoneContact): String? {
