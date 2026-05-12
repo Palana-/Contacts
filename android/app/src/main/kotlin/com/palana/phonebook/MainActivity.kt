@@ -146,7 +146,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }, LinearLayout.LayoutParams(0, dp(54), 1f))
         topBar.addView(topIcon("+") { openEditor(null) }, LinearLayout.LayoutParams(dp(48), dp(48)).withRight(dp(6)))
-        topBar.addView(topIcon("...") { showMoreMenu(it) }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        topBar.addView(topIcon("\u2022\u2022\u2022") { showMoreMenu(it) }, LinearLayout.LayoutParams(dp(48), dp(48)))
 
         content = FrameLayout(this)
         root.addView(topBar)
@@ -196,9 +196,10 @@ class MainActivity : Activity() {
     private fun topIcon(text: String, onClick: (View) -> Unit): TextView {
         return TextView(this).apply {
             this.text = text
-            textSize = if (text == "+") 34f else 32f
+            textSize = if (text == "+") 34f else 28f
             gravity = Gravity.CENTER
             typeface = Typeface.DEFAULT_BOLD
+            includeFontPadding = false
             setTextColor(Color.WHITE)
             background = rounded(BRAND, 16)
             setOnClickListener { onClick(it) }
@@ -215,6 +216,7 @@ class MainActivity : Activity() {
             menu.add(syncTitle)
             menu.add(exportMigrationTitle)
             menu.add(importMigrationTitle)
+            menu.add("\u7248\u672c ${BuildConfig.VERSION_NAME}  \u7f16\u8bd1 ${BuildConfig.BUILD_TIME}").isEnabled = false
             setOnMenuItemClickListener {
                 when (it.title.toString()) {
                     importTitle -> requestReadContactsThenImport()
