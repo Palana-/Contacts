@@ -210,23 +210,17 @@ class MainActivity : Activity() {
         val syncTitle = "\u5199\u5165\u624b\u673a\u901a\u8baf\u5f55"
         val exportMigrationTitle = "\u5bfc\u51fa\u8fc1\u79fb\u5305"
         val importMigrationTitle = "\u5bfc\u5165\u8fc1\u79fb\u5305"
-        val vcfTitle = "\u5bfc\u51fa VCF \u6587\u4ef6"
-        val csvTitle = "\u5bfc\u51fa CSV \u6587\u4ef6"
         PopupMenu(this, anchor).apply {
             menu.add(importTitle)
             menu.add(syncTitle)
             menu.add(exportMigrationTitle)
             menu.add(importMigrationTitle)
-            menu.add(vcfTitle)
-            menu.add(csvTitle)
             setOnMenuItemClickListener {
                 when (it.title.toString()) {
                     importTitle -> requestReadContactsThenImport()
                     syncTitle -> requestWriteContactsThenExport()
                     exportMigrationTitle -> exportMigrationPackage()
                     importMigrationTitle -> pickMigrationPackage()
-                    vcfTitle -> exportVcfFile()
-                    csvTitle -> exportCsvFile()
                 }
                 true
             }
@@ -827,49 +821,6 @@ class MainActivity : Activity() {
             null
         }
     }
-    private fun exportVcfFile() {
-        if (contacts.isEmpty()) {
-            toast("\u6682\u65e0\u8054\u7cfb\u4eba\u53ef\u5bfc\u51fa")
-            return
-        }
-        showProgress("\u6b63\u5728\u5bfc\u51fa VCF...")
-        workExecutor.execute {
-            val text = buildString {
-                contacts.forEach { c ->
-                    appendLine("BEGIN:VCARD")
-                    appendLine("VERSION:3.0")
-                    appendLine("FN:${escapeVcf(c.name)}")
-                    appendLine("TEL;TYPE=CELL:${escapeVcf(c.phone)}")
-                    appendLine("END:VCARD")
-                }
-            }
-            val file = writeExportFile("contacts.vcf", text)
-            runOnUiThread {
-                hideProgress()
-                shareExportFile(file, "text/vcard", "\u5bfc\u51fa\u8054\u7cfb\u4eba")
-            }
-        }
-    }
-
-    private fun exportCsvFile() {
-        if (contacts.isEmpty()) {
-            toast("\u6682\u65e0\u8054\u7cfb\u4eba\u53ef\u5bfc\u51fa")
-            return
-        }
-        showProgress("\u6b63\u5728\u5bfc\u51fa CSV...")
-        workExecutor.execute {
-            val text = buildString {
-                appendLine("\u59d3\u540d,\u624b\u673a\u53f7")
-                contacts.forEach { appendLine("${csvCell(it.name)},${csvCell(it.phone)}") }
-            }
-            val file = writeExportFile("contacts.csv", text)
-            runOnUiThread {
-                hideProgress()
-                shareExportFile(file, "text/csv", "\u5bfc\u51fa\u8054\u7cfb\u4eba")
-            }
-        }
-    }
-
     private fun exportMigrationPackage() {
         if (contacts.isEmpty()) {
             toast("\u6682\u65e0\u8054\u7cfb\u4eba\u53ef\u5bfc\u51fa")
@@ -1032,13 +983,6 @@ class MainActivity : Activity() {
         } finally {
             temp.delete()
         }
-    }
-
-    private fun writeExportFile(fileName: String, text: String): File {
-        val dir = File(cacheDir, "exports").apply { mkdirs() }
-        val file = File(dir, fileName)
-        file.writeText(text, Charsets.UTF_8)
-        return file
     }
 
     private fun shareExportFile(file: File, mimeType: String, chooserTitle: String) {
@@ -1389,12 +1333,6 @@ class MainActivity : Activity() {
     }
 
     private fun normalizePhone(phone: String): String = phone.filter { it.isDigit() || it == '+' }
-
-    private fun escapeVcf(value: String): String {
-        return value.replace("\\", "\\\\").replace("\n", "\\n").replace(",", "\\,").replace(";", "\\;")
-    }
-
-    private fun csvCell(value: String): String = "\"" + value.replace("\"", "\"\"") + "\""
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
