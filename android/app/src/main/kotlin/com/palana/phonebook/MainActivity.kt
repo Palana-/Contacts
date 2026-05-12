@@ -83,6 +83,7 @@ class MainActivity : Activity() {
         window.statusBarColor = Color.WHITE
         window.navigationBarColor = Color.WHITE
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        cleanMigrationExportCache()
         loadContacts()
         buildHome()
         showContacts()
@@ -918,8 +919,7 @@ class MainActivity : Activity() {
     private fun writeMigrationPackage(): File? {
         return try {
             val dir = File(cacheDir, "exports").apply { mkdirs() }
-            dir.listFiles { file -> file.name.startsWith("phonebook_backup_") && file.extension == "pbk" }
-                ?.forEach { it.delete() }
+            cleanMigrationExportCache()
             val file = File(dir, "phonebook_backup_${System.currentTimeMillis()}.pbk")
             val manifest = JSONObject()
                 .put("version", 1)
@@ -964,6 +964,12 @@ class MainActivity : Activity() {
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun cleanMigrationExportCache() {
+        File(cacheDir, "exports")
+            .listFiles { file -> file.name.startsWith("phonebook_backup_") && file.extension == "pbk" }
+            ?.forEach { it.delete() }
     }
 
     private fun importMigrationPackage(uri: Uri): Pair<Int, Int>? {
