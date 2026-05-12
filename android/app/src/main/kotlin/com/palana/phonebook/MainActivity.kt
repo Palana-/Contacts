@@ -918,6 +918,8 @@ class MainActivity : Activity() {
     private fun writeMigrationPackage(): File? {
         return try {
             val dir = File(cacheDir, "exports").apply { mkdirs() }
+            dir.listFiles { file -> file.name.startsWith("phonebook_backup_") && file.extension == "pbk" }
+                ?.forEach { it.delete() }
             val file = File(dir, "phonebook_backup_${System.currentTimeMillis()}.pbk")
             val manifest = JSONObject()
                 .put("version", 1)
