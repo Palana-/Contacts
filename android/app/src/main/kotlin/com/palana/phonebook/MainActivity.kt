@@ -39,9 +39,12 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.nio.charset.Charset
 import java.text.Collator
-import java.util.concurrent.Executors
-import java.util.UUID
 import java.util.Locale
+import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 import kotlin.math.abs
 
 data class PhoneContact(
@@ -90,6 +93,14 @@ class MainActivity : Activity() {
         if (requestCode == EDIT_CONTACT_REQUEST && resultCode == RESULT_OK) {
             loadContacts()
             updateContactList()
+        } else if (requestCode == IMPORT_MIGRATION_REQUEST && resultCode == RESULT_OK) {
+            data?.data?.let { uri ->
+                try {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (_: Exception) {
+                }
+                runImportMigrationPackage(uri)
+            }
         }
     }
 
@@ -196,17 +207,23 @@ class MainActivity : Activity() {
     private fun showMoreMenu(anchor: View) {
         val importTitle = "\u4ece\u624b\u673a\u901a\u8baf\u5f55\u5bfc\u5165"
         val syncTitle = "\u5199\u5165\u624b\u673a\u901a\u8baf\u5f55"
+        val exportMigrationTitle = "\u5bfc\u51fa\u8fc1\u79fb\u5305"
+        val importMigrationTitle = "\u5bfc\u5165\u8fc1\u79fb\u5305"
         val vcfTitle = "\u5bfc\u51fa VCF \u6587\u4ef6"
         val csvTitle = "\u5bfc\u51fa CSV \u6587\u4ef6"
         PopupMenu(this, anchor).apply {
             menu.add(importTitle)
             menu.add(syncTitle)
+            menu.add(exportMigrationTitle)
+            menu.add(importMigrationTitle)
             menu.add(vcfTitle)
             menu.add(csvTitle)
             setOnMenuItemClickListener {
                 when (it.title.toString()) {
                     importTitle -> requestReadContactsThenImport()
                     syncTitle -> requestWriteContactsThenExport()
+                    exportMigrationTitle -> exportMigrationPackage()
+                    importMigrationTitle -> pickMigrationPackage()
                     vcfTitle -> exportVcfFile()
                     csvTitle -> exportCsvFile()
                 }
@@ -505,14 +522,7 @@ class MainActivity : Activity() {
                 setOnClickListener { dialog.dismiss() }
             }, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.RIGHT))
         }, LinearLayout.LayoutParams(-1, dp(44)).withBottom(dp(2)))
-        body.addView(TextView(this).apply {
-            text = contact.name.take(1).uppercase()
-            textSize = 56f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            background = gradientFor(contact)
-        }, LinearLayout.LayoutParams(dp(136), dp(136)).withBottom(dp(14)))
+        body.addView(dialogAvatar(contact), LinearLayout.LayoutParams(dp(136), dp(136)).withBottom(dp(14)))
         body.addView(TextView(this).apply {
             text = contact.displayName()
             textSize = 24f
@@ -541,6 +551,29 @@ class MainActivity : Activity() {
         dialog.setCanceledOnTouchOutside(true)
         dialog.show()
     }
+
+    private fun dialogAvatar(contact: PhoneContact): View {
+        return FrameLayout(this).apply {
+            background = gradientFor(contact)
+            clipToOutline = true
+            val avatar = contact.avatarUri
+            if (avatar.isNullOrBlank()) {
+                addView(TextView(context).apply {
+                    text = contact.displayName().take(1).uppercase()
+                    textSize = 56f
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.WHITE)
+                    typeface = Typeface.DEFAULT_BOLD
+                }, FrameLayout.LayoutParams(-1, -1))
+            } else {
+                addView(ImageView(context).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    loadAvatarAsync(avatar, this)
+                }, FrameLayout.LayoutParams(-1, -1))
+            }
+        }
+    }
+
     private fun openEditor(contact: PhoneContact?) {
         val intent = Intent(this, EditContactActivity::class.java)
         contact?.let {
@@ -836,6 +869,163 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun exportMigrationPackage() {
+        if (contacts.isEmpty()) {
+            toast("\u6682\u65e0\u8054\u7cfb\u4eba\u53ef\u5bfc\u51fa")
+            return
+        }
+        showProgress("\u6b63\u5728\u5bfc\u51fa\u8fc1\u79fb\u5305...")
+        workExecutor.execute {
+            val file = writeMigrationPackage()
+            runOnUiThread {
+                hideProgress()
+                if (file == null) {
+                    toast("\u5bfc\u51fa\u8fc1\u79fb\u5305\u5931\u8d25")
+                } else {
+                    shareExportFile(file, "application/zip")
+                }
+            }
+        }
+    }
+
+    private fun pickMigrationPackage() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        startActivityForResult(intent, IMPORT_MIGRATION_REQUEST)
+    }
+
+    private fun runImportMigrationPackage(uri: Uri) {
+        showProgress("\u6b63\u5728\u5bfc\u5165\u8fc1\u79fb\u5305...")
+        workExecutor.execute {
+            val result = importMigrationPackage(uri)
+            runOnUiThread {
+                hideProgress()
+                if (result == null) {
+                    toast("\u5bfc\u5165\u8fc1\u79fb\u5305\u5931\u8d25")
+                } else {
+                    saveContacts()
+                    updateContactList()
+                    toast("\u5df2\u5bfc\u5165 ${result.first} \u4e2a\u8054\u7cfb\u4eba\uff0c\u66f4\u65b0 ${result.second} \u4e2a\u8054\u7cfb\u4eba")
+                }
+            }
+        }
+    }
+
+    private fun writeMigrationPackage(): File? {
+        return try {
+            val dir = File(cacheDir, "exports").apply { mkdirs() }
+            val file = File(dir, "phonebook_backup_${System.currentTimeMillis()}.pbk")
+            val manifest = JSONObject()
+                .put("version", 1)
+                .put("createdAt", System.currentTimeMillis())
+                .put("app", "phonebook")
+            val contactArray = JSONArray()
+            val avatarEntries = mutableListOf<Pair<String, String>>()
+
+            contacts.forEach { contact ->
+                val item = JSONObject()
+                    .put("id", contact.id)
+                    .put("name", contact.name)
+                    .put("phone", contact.phone)
+                    .put("createdAt", contact.createdAt)
+                    .put("recentAt", contact.recentAt)
+                val avatarName = migrationAvatarName(contact)
+                if (avatarName != null) {
+                    item.put("avatar", avatarName)
+                    avatarEntries.add(contact.avatarUri!! to avatarName)
+                } else {
+                    item.put("avatar", "")
+                }
+                contactArray.put(item)
+            }
+
+            ZipOutputStream(FileOutputStream(file)).use { zip ->
+                zip.putNextEntry(ZipEntry("manifest.json"))
+                zip.write(manifest.toString().toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+                zip.putNextEntry(ZipEntry("contacts.json"))
+                zip.write(JSONObject().put("version", 1).put("contacts", contactArray).toString().toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+                avatarEntries.forEach { (uriText, entryName) ->
+                    openAvatarInputStream(uriText)?.use { input ->
+                        zip.putNextEntry(ZipEntry(entryName))
+                        input.copyTo(zip)
+                        zip.closeEntry()
+                    }
+                }
+            }
+            file
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun importMigrationPackage(uri: Uri): Pair<Int, Int>? {
+        val temp = File(cacheDir, "imports/migration_${System.currentTimeMillis()}.pbk").apply {
+            parentFile?.mkdirs()
+        }
+        return try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(temp).use { output -> input.copyTo(output) }
+            } ?: return null
+
+            var imported = 0
+            var updated = 0
+            val existingByPhone = contacts.associateBy { normalizePhone(it.phone) }.toMutableMap()
+            ZipFile(temp).use { zip ->
+                val contactsEntry = zip.getEntry("contacts.json") ?: return null
+                val root = JSONObject(zip.getInputStream(contactsEntry).bufferedReader(Charsets.UTF_8).use { it.readText() })
+                val array = root.getJSONArray("contacts")
+                for (i in 0 until array.length()) {
+                    val item = array.getJSONObject(i)
+                    val phone = item.optString("phone").trim()
+                    val normalized = normalizePhone(phone)
+                    if (normalized.isEmpty()) continue
+                    val existing = existingByPhone[normalized]
+                    val avatarEntry = item.optString("avatar").takeIf { it.startsWith("avatars/") }
+                    val avatarUri = if (existing?.avatarUri.isNullOrBlank()) {
+                        avatarEntry?.let { extractMigrationAvatar(zip, it, existing?.id ?: item.optString("id").ifBlank { UUID.randomUUID().toString() }) }
+                    } else {
+                        existing?.avatarUri
+                    }
+                    if (existing != null) {
+                        val merged = existing.copy(
+                            name = existing.name.ifBlank { item.optString("name") },
+                            avatarUri = avatarUri ?: existing.avatarUri
+                        )
+                        contacts.removeAll { it.id == existing.id }
+                        contacts.add(merged)
+                        existingByPhone[normalized] = merged
+                        updated++
+                    } else {
+                        val id = item.optString("id").ifBlank { UUID.randomUUID().toString() }
+                        val safeId = if (contacts.any { it.id == id }) UUID.randomUUID().toString() else id
+                        val contact = PhoneContact(
+                            id = safeId,
+                            name = item.optString("name"),
+                            phone = phone,
+                            avatarUri = avatarEntry?.let { extractMigrationAvatar(zip, it, safeId) },
+                            createdAt = item.optLong("createdAt", System.currentTimeMillis()),
+                            recentAt = item.optLong("recentAt", 0L)
+                        )
+                        contacts.add(contact)
+                        existingByPhone[normalized] = contact
+                        imported++
+                    }
+                }
+            }
+            imported to updated
+        } catch (_: Exception) {
+            null
+        } finally {
+            temp.delete()
+        }
+    }
+
     private fun writeExportFile(fileName: String, text: String): File {
         val dir = File(cacheDir, "exports").apply { mkdirs() }
         val file = File(dir, fileName)
@@ -853,6 +1043,52 @@ class MainActivity : Activity() {
         toast("\u5df2\u751f\u6210\uff1a${file.absolutePath}")
         startActivity(Intent.createChooser(intent, "\u5bfc\u51fa\u8054\u7cfb\u4eba"))
     }
+
+    private fun migrationAvatarName(contact: PhoneContact): String? {
+        val avatar = contact.avatarUri ?: return null
+        val ext = avatarExtension(avatar)
+        return "avatars/${contact.id}.$ext"
+    }
+
+    private fun avatarExtension(uriText: String): String {
+        val last = Uri.parse(uriText).lastPathSegment.orEmpty().substringAfterLast('.', "")
+            .lowercase(Locale.US)
+        return when (last) {
+            "png", "webp", "jpg", "jpeg" -> if (last == "jpeg") "jpg" else last
+            else -> "jpg"
+        }
+    }
+
+    private fun openAvatarInputStream(uriText: String): InputStream? {
+        return try {
+            val uri = cachedUri(uriText)
+            if (uri.scheme == "file") {
+                File(uri.path ?: return null).inputStream()
+            } else {
+                contentResolver.openInputStream(uri)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun extractMigrationAvatar(zip: ZipFile, entryName: String, contactId: String): String? {
+        return try {
+            val entry = zip.getEntry(entryName) ?: return null
+            val ext = entryName.substringAfterLast('.', "jpg").lowercase(Locale.US).let {
+                if (it in setOf("png", "webp", "jpg", "jpeg")) it else "jpg"
+            }
+            val dir = File(filesDir, "avatars").apply { mkdirs() }
+            val file = File(dir, "${contactId}_${System.currentTimeMillis()}.$ext")
+            zip.getInputStream(entry).use { input ->
+                FileOutputStream(file).use { output -> input.copyTo(output) }
+            }
+            Uri.fromFile(file).toString()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun callContact(contact: PhoneContact) {
         val updated = contact.copy(recentAt = System.currentTimeMillis())
         contacts.removeAll { it.id == contact.id }
@@ -1051,17 +1287,27 @@ class MainActivity : Activity() {
 
     private fun copyAvatarToPrivateFile(sourceUri: String?, contactId: String, systemContactId: Long? = null): String? {
         return try {
-            val bitmap = if (!sourceUri.isNullOrBlank()) {
-                decodeAvatarThumbnail(sourceUri)
-            } else {
-                null
-            } ?: decodeSystemContactPhoto(systemContactId) ?: return null
             val dir = File(filesDir, "avatars").apply { mkdirs() }
-            val file = File(dir, "$contactId.jpg")
-            FileOutputStream(file).use { output ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)
+            val rawFile = File(dir, "$contactId.${sourceUri?.let { avatarExtension(it) } ?: "jpg"}")
+            val copiedRaw = if (!sourceUri.isNullOrBlank()) {
+                openAvatarInputStream(sourceUri)?.use { input ->
+                    FileOutputStream(rawFile).use { output -> input.copyTo(output) }
+                    true
+                } == true
+            } else {
+                false
             }
-            Uri.fromFile(file).toString()
+            if (copiedRaw) return Uri.fromFile(rawFile).toString()
+
+            val photoFile = File(dir, "$contactId.jpg")
+            openSystemContactPhotoStream(systemContactId)?.use { input ->
+                FileOutputStream(photoFile).use { output -> input.copyTo(output) }
+                return Uri.fromFile(photoFile).toString()
+            }
+
+            val bitmap = decodeSystemContactPhoto(systemContactId) ?: decodeAvatarThumbnail(sourceUri ?: return null) ?: return null
+            FileOutputStream(photoFile).use { output -> bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output) }
+            Uri.fromFile(photoFile).toString()
         } catch (_: Exception) {
             null
         }
@@ -1080,6 +1326,12 @@ class MainActivity : Activity() {
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun openSystemContactPhotoStream(systemContactId: Long?): InputStream? {
+        if (systemContactId == null) return null
+        val contactUri = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, systemContactId.toString())
+        return openSystemContactPhotoStream(contactUri)
     }
 
     private fun openSystemContactPhotoStream(contactUri: Uri): InputStream? {
@@ -1150,6 +1402,7 @@ class MainActivity : Activity() {
         const val PREFS_NAME = "phone_book"
         const val CONTACTS_KEY = "contacts"
         private const val EDIT_CONTACT_REQUEST = 1000
+        private const val IMPORT_MIGRATION_REQUEST = 1001
         private const val CALL_PERMISSION_REQUEST = 1002
         private const val READ_CONTACTS_REQUEST = 1003
         private const val WRITE_CONTACTS_REQUEST = 1004
