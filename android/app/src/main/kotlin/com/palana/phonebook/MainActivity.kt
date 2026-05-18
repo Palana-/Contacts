@@ -248,7 +248,7 @@ class MainActivity : Activity() {
         }
 
         recyclerView = RecyclerView(this).apply {
-            setPadding(dp(16), dp(16), dp(16), dp(28))
+            setPadding(dp(2), dp(2), dp(2), dp(28))
             clipToPadding = false
             layoutManager = contactLayoutManager
             adapter = contactAdapter
@@ -327,15 +327,16 @@ class MainActivity : Activity() {
             scaleType = ImageView.ScaleType.CENTER_CROP
             setImageURI(Uri.parse(contact.avatarUri))
             alpha = 0.96f
-        }, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(48) })
+        }, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(34) })
         frame.addView(TextView(this).apply {
             text = contact.name
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            textSize = 17f
+            textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
+            includeFontPadding = false
             background = GradientDrawable().apply { setColor(0x88000000.toInt()) }
-        }, FrameLayout.LayoutParams(-1, dp(48), Gravity.BOTTOM))
+        }, FrameLayout.LayoutParams(-1, dp(34), Gravity.BOTTOM))
         return frame
     }
 
@@ -445,28 +446,36 @@ class MainActivity : Activity() {
     }
 
     private fun createAvatarItemView(parent: ViewGroup): View {
-        return FrameLayout(parent.context).apply {
+        return object : FrameLayout(parent.context) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val width = View.MeasureSpec.getSize(widthMeasureSpec)
+                val exactHeight = View.MeasureSpec.makeMeasureSpec(width + dp(34), View.MeasureSpec.EXACTLY)
+                super.onMeasure(widthMeasureSpec, exactHeight)
+            }
+        }.apply {
             clipToOutline = true
             elevation = dp(2).toFloat()
             layoutParams = RecyclerView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(190)
+                ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(dp(5), dp(5), dp(5), dp(10))
+                setMargins(dp(2), dp(2), dp(2), dp(2))
             }
             addView(ImageView(context).apply {
                 tag = "avatarImage"
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 alpha = 0.96f
-            }, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(48) })
+            }, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(34) })
             addView(TextView(context).apply {
                 tag = "avatarName"
                 gravity = Gravity.CENTER
                 setTextColor(Color.WHITE)
-                textSize = 17f
+                textSize = 15f
                 typeface = Typeface.DEFAULT_BOLD
+                includeFontPadding = false
+                setSingleLine(true)
                 background = GradientDrawable().apply { setColor(0x88000000.toInt()) }
-            }, FrameLayout.LayoutParams(-1, dp(48), Gravity.BOTTOM))
+            }, FrameLayout.LayoutParams(-1, dp(34), Gravity.BOTTOM))
         }
     }
 
@@ -530,19 +539,20 @@ class MainActivity : Activity() {
         })
         body.addView(TextView(this).apply {
             text = contact.phone
-            textSize = 17f
-            setTextColor(MUTED)
+            textSize = 21f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.BLACK)
             gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(-1, -2).withBottom(dp(18)))
-        body.addView(primaryButton("\u62e8\u53f7") {
+        body.addView(dialogActionButton("\u62e8\u53f7", R.drawable.ic_dialog_call, CALL_GREEN, Color.WHITE) {
             dialog.dismiss()
             callContact(contact)
         }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
-        body.addView(secondaryButton("\u7f16\u8f91") {
+        body.addView(dialogActionButton("\u7f16\u8f91", R.drawable.ic_dialog_edit, 0xFFE0F2F1.toInt(), BRAND) {
             dialog.dismiss()
             openEditor(contact)
         }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
-        body.addView(dangerButton("\u5220\u9664") {
+        body.addView(dialogActionButton("\u5220\u9664", R.drawable.ic_dialog_delete, 0xFFDC2626.toInt(), Color.WHITE) {
             confirmDelete(contact, dialog)
         }, LinearLayout.LayoutParams(-1, dp(54)).withBottom(dp(10)))
         dialog.setView(body)
@@ -1267,6 +1277,29 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun dialogActionButton(label: String, iconRes: Int, backgroundColor: Int, textColor: Int, onClick: () -> Unit): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = true
+            background = rounded(backgroundColor, 16)
+            addView(ImageView(context).apply {
+                setImageResource(iconRes)
+                setColorFilter(textColor)
+            }, LinearLayout.LayoutParams(dp(24), dp(24)).withRight(dp(8)))
+            addView(TextView(context).apply {
+                text = label
+                textSize = 17f
+                typeface = Typeface.DEFAULT_BOLD
+                includeFontPadding = false
+                setTextColor(textColor)
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            setOnClickListener { onClick() }
+        }
+    }
+
     private fun decodeSystemContactPhoto(systemContactId: Long?): Bitmap? {
         if (systemContactId == null) return null
         val contactUri = Uri.withAppendedPath(
@@ -1355,6 +1388,7 @@ class MainActivity : Activity() {
         private const val READ_CONTACTS_REQUEST = 1003
         private const val WRITE_CONTACTS_REQUEST = 1004
         private const val BRAND = 0xFF0891B2.toInt()
+        private const val CALL_GREEN = 0xFF07C160.toInt()
         private const val TEXT = 0xFF0F172A.toInt()
         private const val MUTED = 0xFF64748B.toInt()
         private const val SURFACE = 0xFFF8FAFC.toInt()

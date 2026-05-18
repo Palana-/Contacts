@@ -1,7 +1,6 @@
 package com.palana.phonebook
 
 import android.app.Activity
-import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -16,8 +15,16 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import com.luck.picture.lib.basic.PictureSelector
+import com.luck.picture.lib.config.SelectMimeType
+import com.luck.picture.lib.config.SelectModeConfig
+import com.luck.picture.lib.entity.LocalMedia
+import com.luck.picture.lib.interfaces.OnResultCallbackListener
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.util.Locale
 import java.util.UUID
 
 class EditContactActivity : Activity() {
@@ -39,16 +46,6 @@ class EditContactActivity : Activity() {
         recentAt = intent.getLongExtra("recentAt", 0L)
 
         buildPage()
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK) {
-            val uri = data?.data ?: return
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            selectedAvatarUri = uri.toString()
-            avatar.setImageURI(uri)
-        }
     }
 
     override fun finish() {
@@ -155,13 +152,58 @@ class EditContactActivity : Activity() {
     }
 
     private fun pickImage() {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "image/*"
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        PictureSelector.create(this)
+            .openGallery(SelectMimeType.ofImage())
+            .setImageEngine(ContactImageEngine)
+            .setSelectionMode(SelectModeConfig.SINGLE)
+            .setMaxSelectNum(1)
+            .isDisplayCamera(false)
+            .isDirectReturnSingle(true)
+            .forResult(object : OnResultCallbackListener<LocalMedia> {
+                override fun onResult(result: ArrayList<LocalMedia>) {
+                    val media = result.firstOrNull() ?: return
+                    val avatarUri = copyAvatarToPrivateFile(media.availablePath.ifBlank { media.path })
+                    if (avatarUri == null) {
+                        Toast.makeText(this@EditContactActivity, "\u5934\u50cf\u8bfb\u53d6\u5931\u8d25", Toast.LENGTH_SHORT).show()
+                        return
+                    }
+                    selectedAvatarUri = avatarUri
+                    avatar.setImageURI(Uri.parse(avatarUri))
+                }
+
+                override fun onCancel() = Unit
+            })
+    }
+
+    private fun copyAvatarToPrivateFile(sourcePath: String?): String? {
+        if (sourcePath.isNullOrBlank()) return null
+        return try {
+            val sourceUri = Uri.parse(sourcePath)
+            val ext = avatarExtension(sourcePath)
+            val dir = File(filesDir, "avatars").apply { mkdirs() }
+            val file = File(dir, "avatar_${System.currentTimeMillis()}.$ext")
+            val input = when {
+                sourceUri.scheme == "file" -> File(sourceUri.path ?: return null).inputStream()
+                sourceUri.scheme == null -> File(sourcePath).inputStream()
+                else -> contentResolver.openInputStream(sourceUri) ?: return null
+            }
+            input.use {
+                FileOutputStream(file).use { output -> it.copyTo(output) }
+            }
+            Uri.fromFile(file).toString()
+        } catch (_: Exception) {
+            null
         }
-        startActivityForResult(intent, PICK_IMAGE_REQUEST)
+    }
+
+    private fun avatarExtension(path: String): String {
+        val ext = path.substringBefore('?')
+            .substringAfterLast('.', "")
+            .lowercase(Locale.US)
+        return when (ext) {
+            "png", "webp", "jpg", "jpeg" -> if (ext == "jpeg") "jpg" else ext
+            else -> "jpg"
+        }
     }
 
     private fun loadContacts(): List<PhoneContact> {
@@ -248,7 +290,6 @@ class EditContactActivity : Activity() {
     }
 
     companion object {
-        private const val PICK_IMAGE_REQUEST = 2001
         private const val BRAND = 0xFF0891B2.toInt()
         private const val TEXT = 0xFF0F172A.toInt()
         private const val SURFACE = 0xFFF8FAFC.toInt()
