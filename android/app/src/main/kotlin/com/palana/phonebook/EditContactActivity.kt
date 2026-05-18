@@ -72,7 +72,11 @@ class EditContactActivity : Activity() {
             background = rounded(Color.WHITE, 24)
             scaleType = ImageView.ScaleType.CENTER_CROP
             selectedAvatarUri?.let { setImageURI(Uri.parse(it)) }
-            if (selectedAvatarUri == null) setImageResource(android.R.drawable.ic_menu_camera)
+            if (selectedAvatarUri == null) {
+                scaleType = ImageView.ScaleType.CENTER
+                setImageResource(R.drawable.ic_default_avatar)
+                setColorFilter(MUTED)
+            }
             setOnClickListener { pickImage() }
         }
 
@@ -168,6 +172,8 @@ class EditContactActivity : Activity() {
                         return
                     }
                     selectedAvatarUri = avatarUri
+                    avatar.clearColorFilter()
+                    avatar.scaleType = ImageView.ScaleType.CENTER_CROP
                     avatar.setImageURI(Uri.parse(avatarUri))
                 }
 
@@ -292,6 +298,7 @@ class EditContactActivity : Activity() {
     companion object {
         private const val BRAND = 0xFF0891B2.toInt()
         private const val TEXT = 0xFF0F172A.toInt()
+        private const val MUTED = 0xFF64748B.toInt()
         private const val SURFACE = 0xFFF8FAFC.toInt()
     }
 }
