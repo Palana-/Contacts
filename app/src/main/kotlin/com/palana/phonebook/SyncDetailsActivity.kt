@@ -162,9 +162,9 @@ class SyncDetailsActivity : ComponentActivity() {
     private fun parseDetails(raw: String): List<SyncDetail> {
         return runCatching {
             val array = JSONArray(raw)
-            List(array.length()) { index ->
+            val rawDetails = List(array.length()) { index ->
                 val item = array.getJSONObject(index)
-                SyncDetail(
+                RawSyncDetail(
                     type = item.optString("type"),
                     name = item.optString("name"),
                     phone = item.optString("phone"),
@@ -176,11 +176,21 @@ class SyncDetailsActivity : ComponentActivity() {
                     },
                     oldName = item.optString("oldName").ifBlank { null }
                 )
-            }.sortedWith(compareBy<SyncDetail> { if (it.target == PhoneSyncTarget.SYSTEM) 0 else 1 })
+            }
+            rawDetails
+                .groupByStable { it.target to it.phone }
+                .map { (_, changes) -> SyncDetail.from(changes) }
+                .sortedWith(compareBy<SyncDetail> { if (it.target == PhoneSyncTarget.SYSTEM) 0 else 1 })
         }.getOrDefault(emptyList())
     }
 
-    private data class SyncDetail(
+    private fun <T, K> List<T>.groupByStable(keySelector: (T) -> K): List<Pair<K, List<T>>> {
+        val groups = linkedMapOf<K, MutableList<T>>()
+        forEach { item -> groups.getOrPut(keySelector(item)) { mutableListOf() }.add(item) }
+        return groups.map { it.key to it.value }
+    }
+
+    private data class RawSyncDetail(
         val type: String,
         val name: String,
         val phone: String,
@@ -189,14 +199,47 @@ class SyncDetailsActivity : ComponentActivity() {
         val field: String,
         val target: String,
         val oldName: String?
+    )
+
+    private data class SyncDetail(
+        val types: List<String>,
+        val name: String,
+        val phone: String,
+        val avatarUri: String?,
+        val fields: Set<String>,
+        val toneByField: Map<String, String>,
+        val target: String,
+        val oldName: String?
     ) {
-        fun title(): String = type.replaceFirst("APP", "APP-").replaceFirst("系统", "系统-")
-        fun shouldShowName(): Boolean = name.isNotBlank() && (name != phone || field == PhoneSyncField.NAME)
-        fun shouldShowOldName(): Boolean = field == PhoneSyncField.NAME && tone == PhoneSyncTone.UPDATE && !oldName.isNullOrBlank() && oldName != name
-        fun toneColor(): Color = if (tone == PhoneSyncTone.UPDATE) DangerColor else Brand
-        fun isAvatarChanged(): Boolean = field == PhoneSyncField.AVATAR || field == PhoneSyncField.CONTACT
+        fun title(): String {
+            val prefix = if (target == PhoneSyncTarget.APP) "APP" else "系统"
+            val actions = types.map { it.removePrefix("APP").removePrefix("系统").removePrefix("-") }.distinct()
+            return "$prefix-${actions.joinToString(" / ")}"
+        }
+        fun shouldShowName(): Boolean = name.isNotBlank() && (name != phone || fields.contains(PhoneSyncField.NAME))
+        fun shouldShowOldName(): Boolean = fields.contains(PhoneSyncField.NAME) && toneByField[PhoneSyncField.NAME] == PhoneSyncTone.UPDATE && !oldName.isNullOrBlank() && oldName != name
+        fun toneColor(): Color = if ((toneByField[PhoneSyncField.AVATAR] ?: toneByField[PhoneSyncField.CONTACT]) == PhoneSyncTone.UPDATE) DangerColor else Brand
+        fun isAvatarChanged(): Boolean = fields.contains(PhoneSyncField.AVATAR) || fields.contains(PhoneSyncField.CONTACT)
         fun fieldColor(targetField: String): Color {
-            return if (field == targetField || field == PhoneSyncField.CONTACT) toneColor() else TextColor
+            val tone = toneByField[targetField] ?: toneByField[PhoneSyncField.CONTACT] ?: return TextColor
+            return if (tone == PhoneSyncTone.UPDATE) DangerColor else Brand
+        }
+
+        companion object {
+            fun from(changes: List<RawSyncDetail>): SyncDetail {
+                val nameChange = changes.lastOrNull { it.field == PhoneSyncField.NAME }
+                val phoneChange = changes.lastOrNull { it.field == PhoneSyncField.PHONE }
+                return SyncDetail(
+                    types = changes.map { it.type },
+                    name = nameChange?.name ?: changes.firstNotNullOfOrNull { it.name.takeIf(String::isNotBlank) }.orEmpty(),
+                    phone = phoneChange?.phone ?: changes.lastOrNull()?.phone.orEmpty(),
+                    avatarUri = changes.firstNotNullOfOrNull { it.avatarUri },
+                    fields = changes.map { it.field }.toSet(),
+                    toneByField = changes.associate { it.field to it.tone },
+                    target = changes.firstOrNull()?.target.orEmpty(),
+                    oldName = nameChange?.oldName
+                )
+            }
         }
     }
 
