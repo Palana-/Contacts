@@ -515,6 +515,7 @@ class MainActivity : ComponentActivity() {
                     if (contact.name.isNotBlank()) {
                         Spacer(Modifier.height(14.dp))
                         Text(contact.name, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = TextColor, textAlign = TextAlign.Center)
+                        Spacer(Modifier.height(8.dp))
                     } else {
                         Spacer(Modifier.height(14.dp))
                     }
