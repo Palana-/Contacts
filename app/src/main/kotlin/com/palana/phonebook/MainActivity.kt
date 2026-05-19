@@ -366,24 +366,28 @@ class MainActivity : ComponentActivity() {
                 .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .height(44.dp)
-                    .width(136.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(gradientFor(contact))
-                    .padding(horizontal = 4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    contact.displayName(),
-                    color = Color.White,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 20.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center
-                )
+            if (contact.name.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .height(44.dp)
+                        .width(136.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(gradientFor(contact))
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        contact.name,
+                        color = Color.White,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 20.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                Spacer(Modifier.height(44.dp).width(136.dp))
             }
             Spacer(Modifier.width(12.dp))
             Spacer(Modifier.weight(1f))
@@ -916,7 +920,7 @@ class MainActivity : ComponentActivity() {
                 }
                 val contact = PhoneContact(
                     id = id,
-                    name = systemName.ifBlank { phone },
+                    name = systemName,
                     phone = phone,
                     avatarUri = localAvatar
                 )

@@ -93,9 +93,9 @@ class SyncDetailsActivity : ComponentActivity() {
                     if (!detail.avatarUri.isNullOrBlank()) {
                         Box(
                             modifier = Modifier
-                                .size(54.dp)
+                                .size(if (detail.isAvatarChanged()) 58.dp else 54.dp)
                                 .avatarChangeBorder(detail)
-                                .padding(if (detail.isAvatarChanged()) 1.dp else 0.dp)
+                                .padding(if (detail.isAvatarChanged()) 2.dp else 0.dp)
                                 .clip(RoundedCornerShape(10.dp)),
                             contentAlignment = Alignment.Center
                         ) {
@@ -123,7 +123,7 @@ class SyncDetailsActivity : ComponentActivity() {
 
     private fun Modifier.avatarChangeBorder(detail: SyncDetail): Modifier {
         return if (detail.isAvatarChanged()) {
-            border(1.dp, detail.toneColor(), RoundedCornerShape(11.dp))
+            border(1.dp, detail.toneColor(), RoundedCornerShape(12.dp))
         } else {
             this
         }
