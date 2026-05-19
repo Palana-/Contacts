@@ -3,6 +3,7 @@ package com.palana.phonebook.data
 import android.content.Context
 import com.palana.phonebook.ContactSyncState
 import com.palana.phonebook.PhoneContact
+import com.palana.phonebook.normalizeMainlandMobileNumber
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -16,7 +17,21 @@ class ContactRepository private constructor(
 
     suspend fun getContacts(): List<PhoneContact> = withContext(Dispatchers.IO) {
         migrateLegacyContactsIfNeeded()
-        dao.getAll().map { it.toContact() }
+        dao.getAll().map { it.toContact() }.dedupeByPhone()
+    }
+
+    suspend fun getContact(id: String): PhoneContact? = withContext(Dispatchers.IO) {
+        dao.getById(id)?.toContact()
+    }
+
+    suspend fun getDeletedPhoneKeys(): Set<String> = withContext(Dispatchers.IO) {
+        dao.getDeleted().map { normalizePhoneKey(it.phone) }.filter { it.isNotEmpty() }.toSet()
+    }
+
+    suspend fun getDeletedContactMarkers(): List<DeletedContactMarker> = withContext(Dispatchers.IO) {
+        dao.getDeleted()
+            .map { DeletedContactMarker(id = it.id, phoneKey = normalizePhoneKey(it.phone)) }
+            .filter { it.phoneKey.isNotEmpty() }
     }
 
     suspend fun replaceContacts(contacts: List<PhoneContact>) = withContext(Dispatchers.IO) {
@@ -37,16 +52,39 @@ class ContactRepository private constructor(
         val result = syncDataSource.pushChanges(pending)
         if (result.success && pending.isNotEmpty()) {
             val syncedAt = System.currentTimeMillis()
-            dao.upsertAll(
-                pending.map {
+            val deletedIds = pending.filter { it.syncState == ContactSyncState.DELETED }.map { it.id }
+            if (deletedIds.isNotEmpty()) {
+                dao.deleteByIds(deletedIds)
+            }
+            val activeChanges = pending.filter { it.syncState != ContactSyncState.DELETED }
+            if (activeChanges.isNotEmpty()) {
+                dao.upsertAll(
+                    activeChanges.map {
                     it.copy(
                         lastSyncedAt = syncedAt,
                         syncState = ContactSyncState.SYNCED
                     ).toEntity(ContactSyncState.SYNCED)
-                }
-            )
+                    }
+                )
+            }
         }
         result
+    }
+
+    private fun List<PhoneContact>.dedupeByPhone(): List<PhoneContact> {
+        return groupBy { normalizePhoneKey(it.phone).ifBlank { it.id } }
+            .values
+            .map { group ->
+                group.maxWith(
+                    compareBy<PhoneContact> { !it.avatarUri.isNullOrBlank() }
+                        .thenBy { it.updatedAt }
+                        .thenBy { it.createdAt }
+                )
+            }
+    }
+
+    private fun normalizePhoneKey(phone: String): String {
+        return normalizeMainlandMobileNumber(phone).ifBlank { phone.filter { it.isDigit() || it == '+' } }
     }
 
     private suspend fun migrateLegacyContactsIfNeeded() {
@@ -115,4 +153,9 @@ data class SyncResult(
     val pushedCount: Int,
     val pulledCount: Int,
     val message: String? = null
+)
+
+data class DeletedContactMarker(
+    val id: String,
+    val phoneKey: String
 )

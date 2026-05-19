@@ -1,6 +1,7 @@
 package com.palana.phonebook
 
 import android.os.Bundle
+import android.content.Intent
 import android.view.Window
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -47,7 +48,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.lifecycle.lifecycleScope
 import androidx.core.view.WindowCompat
@@ -66,6 +69,7 @@ class EditContactActivity : ComponentActivity() {
     private var contactId: String? = null
     private var createdAt: Long = 0L
     private var recentAt: Long = 0L
+    private var originalPhone: String = ""
     private var name by mutableStateOf("")
     private var phone by mutableStateOf("")
     private var avatarUri by mutableStateOf<String?>(null)
@@ -88,7 +92,8 @@ class EditContactActivity : ComponentActivity() {
 
         contactId = intent.getStringExtra(EXTRA_ID)
         name = intent.getStringExtra(EXTRA_NAME).orEmpty()
-        phone = intent.getStringExtra(EXTRA_PHONE).orEmpty()
+        phone = normalizeMainlandMobileNumber(intent.getStringExtra(EXTRA_PHONE).orEmpty())
+        originalPhone = phone
         avatarUri = intent.getStringExtra(EXTRA_AVATAR_URI)
         createdAt = intent.getLongExtra(EXTRA_CREATED_AT, System.currentTimeMillis())
         recentAt = intent.getLongExtra(EXTRA_RECENT_AT, 0L)
@@ -137,16 +142,18 @@ class EditContactActivity : ComponentActivity() {
                     onValueChange = { name = it },
                     label = { Text("姓名") },
                     singleLine = true,
+                    textStyle = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = phone,
-                    onValueChange = { phone = phoneDigitsOnly(it) },
+                    onValueChange = { phone = normalizeMainlandMobileNumber(it) },
                     label = { Text("电话") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     visualTransformation = PhoneNumberVisualTransformation(),
+                    textStyle = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(24.dp))
@@ -231,12 +238,13 @@ class EditContactActivity : ComponentActivity() {
                 surface = SurfaceColor,
                 background = SurfaceColor
             ),
+            typography = PhoneBookTypography,
             content = content
         )
     }
 
     private fun saveContact() {
-        val trimmedPhone = phone.trim()
+        val trimmedPhone = normalizeMainlandMobileNumber(phone)
         val trimmedName = name.trim()
         if (trimmedPhone.isEmpty()) {
             toast("请填写电话")
@@ -261,7 +269,17 @@ class EditContactActivity : ComponentActivity() {
                     )
                 )
             }
-            setResult(RESULT_OK)
+            setResult(
+                RESULT_OK,
+                Intent()
+                    .putExtra(EXTRA_ID, id)
+                    .putExtra(EXTRA_ORIGINAL_PHONE, originalPhone)
+                    .putExtra(EXTRA_NAME, trimmedName)
+                    .putExtra(EXTRA_PHONE, trimmedPhone)
+                    .putExtra(EXTRA_AVATAR_URI, avatarUri)
+                    .putExtra(EXTRA_CREATED_AT, if (contactId == null) System.currentTimeMillis() else createdAt)
+                    .putExtra(EXTRA_RECENT_AT, recentAt)
+            )
             finish()
         }
     }
@@ -270,6 +288,7 @@ class EditContactActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_ID = "id"
+        const val EXTRA_ORIGINAL_PHONE = "originalPhone"
         const val EXTRA_NAME = "name"
         const val EXTRA_PHONE = "phone"
         const val EXTRA_AVATAR_URI = "avatarUri"

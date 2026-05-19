@@ -38,12 +38,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -113,11 +113,18 @@ class MainActivity : ComponentActivity() {
     private var contacts by mutableStateOf<List<PhoneContact>>(emptyList())
     private var selectedContact by mutableStateOf<PhoneContact?>(null)
     private var contactPendingDelete by mutableStateOf<PhoneContact?>(null)
+    private var syncSummary by mutableStateOf<PhoneSyncSummary?>(null)
     private var progressMessage by mutableStateOf<String?>(null)
     private var pendingCallNumber: String? = null
+    private var pendingFullPhoneSync = false
 
     private val editContactLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == RESULT_OK) loadContacts()
+        if (result.resultCode == RESULT_OK) {
+            loadContacts()
+            val id = result.data?.getStringExtra(EditContactActivity.EXTRA_ID)
+            val originalPhone = result.data?.getStringExtra(EditContactActivity.EXTRA_ORIGINAL_PHONE).orEmpty()
+            if (!id.isNullOrBlank()) syncEditedContactToPhone(id, originalPhone)
+        }
     }
 
     private val pickMigrationLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -143,11 +150,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private val readContactsPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) runImportFromPhoneContacts() else toast("需要通讯录读取权限")
+        if (granted) requestPhoneSyncAfterReadPermission() else toast("需要通讯录读取权限")
     }
 
     private val writeContactsPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) runExportToPhoneContacts() else toast("需要通讯录写入权限")
+        if (granted) requestPhoneSyncAfterWritePermission() else toast("需要通讯录写入权限")
     }
 
     @Composable
@@ -201,6 +208,10 @@ class MainActivity : ComponentActivity() {
                 }
             )
         }
+
+        syncSummary?.let { summary ->
+            SyncSummaryDialog(summary = summary, onDismiss = { syncSummary = null })
+        }
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -218,20 +229,16 @@ class MainActivity : ComponentActivity() {
                 },
                 actions = {
                     IconButton(onClick = { openEditor(null) }) {
-                        Icon(Icons.Default.Add, contentDescription = "新增联系人", tint = Brand)
+                        Icon(Icons.Default.Add, contentDescription = "新增联系人", tint = Brand, modifier = Modifier.size(34.dp))
                     }
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Default.MoreHoriz, contentDescription = "更多", tint = Brand)
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(text = { Text("从手机通讯录导入") }, onClick = {
+                            DropdownMenuItem(text = { Text("同步手机通讯录") }, onClick = {
                                 menuOpen = false
-                                requestReadContactsThenImport()
-                            })
-                            DropdownMenuItem(text = { Text("写入手机通讯录") }, onClick = {
-                                menuOpen = false
-                                requestWriteContactsThenExport()
+                                requestFullPhoneSync()
                             })
                             DropdownMenuItem(text = { Text("导出迁移包") }, onClick = {
                                 menuOpen = false
@@ -241,11 +248,15 @@ class MainActivity : ComponentActivity() {
                                 menuOpen = false
                                 pickMigrationLauncher.launch(arrayOf("*/*"))
                             })
-                            DropdownMenuItem(text = { Text("同步占位接口") }, onClick = {
-                                menuOpen = false
-                                syncNow()
-                            }, leadingIcon = { Icon(Icons.Default.Sync, null) })
-                            DropdownMenuItem(text = { Text("版本 ${BuildConfig.VERSION_NAME}") }, onClick = {})
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("版本 ${BuildConfig.VERSION_NAME}", color = MutedColor)
+                                        Text("(${BuildConfig.BUILD_TIME})", color = MutedColor)
+                                    }
+                                },
+                                onClick = {}
+                            )
                         }
                     }
                 },
@@ -323,21 +334,23 @@ class MainActivity : ComponentActivity() {
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxWidth().aspectRatio(1f)
                 )
-                Text(
-                    text = contact.displayName(),
-                    color = Color.White,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 20.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(34.dp)
-                        .background(Color.Black.copy(alpha = 0.55f))
-                        .padding(horizontal = 2.dp, vertical = 4.dp)
-                )
+                if (contact.name.isNotBlank()) {
+                    Text(
+                        text = contact.name,
+                        color = Color.White,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 20.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(34.dp)
+                            .background(Color.Black.copy(alpha = 0.55f))
+                            .padding(horizontal = 2.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
     }
@@ -436,6 +449,47 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun SyncSummaryDialog(summary: PhoneSyncSummary, onDismiss: () -> Unit) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            confirmButton = {
+                Row {
+                    if (summary.details.isNotEmpty()) {
+                        TextButton(onClick = { openSyncDetails(summary) }) {
+                            Text("查看详情", fontWeight = FontWeight.Bold, color = Brand)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = CallGreen, contentColor = Color.White)) {
+                    Text("知道了", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = CallGreen, modifier = Modifier.size(64.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text("同步完成", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = TextColor)
+                    Spacer(Modifier.height(10.dp))
+                    Column(horizontalAlignment = Alignment.Start) {
+                        summary.lines().forEachIndexed { index, line ->
+                            if (index > 0) Spacer(Modifier.height(4.dp))
+                            Text(line, color = MutedColor, textAlign = TextAlign.Start)
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    private fun openSyncDetails(summary: PhoneSyncSummary) {
+        startActivity(
+            Intent(this, SyncDetailsActivity::class.java)
+                .putExtra(SyncDetailsActivity.EXTRA_DETAILS, summary.detailsJson())
+        )
+    }
+
+    @Composable
     private fun ContactDetailDialog(
         contact: PhoneContact,
         onDismiss: () -> Unit,
@@ -454,8 +508,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     ContactAvatar(contact = contact, size = 136)
-                    Spacer(Modifier.height(14.dp))
-                    Text(contact.displayName(), fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = TextColor, textAlign = TextAlign.Center)
+                    if (contact.name.isNotBlank()) {
+                        Spacer(Modifier.height(14.dp))
+                        Text(contact.name, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = TextColor, textAlign = TextAlign.Center)
+                    } else {
+                        Spacer(Modifier.height(14.dp))
+                    }
                     Text(groupedPhoneNumber(contact.phone), fontSize = 21.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(18.dp))
                     DialogAction("拨号", Icons.Default.Call, CallGreen, Color.White, onCall)
@@ -517,6 +575,7 @@ class MainActivity : ComponentActivity() {
                 background = SurfaceColor,
                 error = DangerColor
             ),
+            typography = PhoneBookTypography,
             content = content
         )
     }
@@ -531,6 +590,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             withContext(Dispatchers.IO) { repository.deleteContact(contact.id) }
             loadContacts()
+            syncDeletedContactToPhone(contact)
         }
     }
 
@@ -593,44 +653,197 @@ class MainActivity : ComponentActivity() {
         return null
     }
 
-    private fun requestReadContactsThenImport() {
-        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) runImportFromPhoneContacts()
-        else readContactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
-    }
-
-    private fun requestWriteContactsThenExport() {
-        if (contacts.isEmpty()) {
-            toast("暂无联系人可写入")
-            return
+    private fun requestFullPhoneSync() {
+        pendingFullPhoneSync = true
+        when {
+            !hasReadContactsPermission() -> readContactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+            !hasWriteContactsPermission() -> writeContactsPermissionLauncher.launch(Manifest.permission.WRITE_CONTACTS)
+            else -> runFullPhoneSync(showResult = true)
         }
-        if (checkSelfPermission(Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED) runExportToPhoneContacts()
-        else writeContactsPermissionLauncher.launch(Manifest.permission.WRITE_CONTACTS)
     }
 
-    private fun runImportFromPhoneContacts() {
-        progressMessage = "正在导入通讯录..."
+    private fun requestPhoneSyncAfterReadPermission() {
+        if (!pendingFullPhoneSync) return
+        if (!hasWriteContactsPermission()) writeContactsPermissionLauncher.launch(Manifest.permission.WRITE_CONTACTS)
+        else runFullPhoneSync(showResult = true)
+    }
+
+    private fun requestPhoneSyncAfterWritePermission() {
+        if (pendingFullPhoneSync) runFullPhoneSync(showResult = true)
+    }
+
+    private fun runFullPhoneSync(showResult: Boolean) {
+        pendingFullPhoneSync = false
+        progressMessage = "正在同步手机通讯录..."
         lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) { importFromPhoneContacts() }
+            val summary = withContext(Dispatchers.IO) { syncPhoneContactsBySnapshot() }
             progressMessage = null
-            saveContacts(contacts)
-            toast("已导入 ${result.first} 个联系人，补齐 ${result.second} 个头像")
+            loadContacts()
+            if (showResult) syncSummary = summary
         }
     }
 
-    private fun runExportToPhoneContacts() {
-        progressMessage = "正在写入手机通讯录..."
+    private suspend fun syncPhoneContactsBySnapshot(): PhoneSyncSummary {
+        val appContacts = repository.getContacts()
+        val appMutable = appContacts.toMutableList()
+        val appByPhone = appMutable
+            .mapNotNull { contact -> normalizePhone(contact.phone).takeIf { it.isNotEmpty() }?.let { it to contact } }
+            .toMap()
+            .toMutableMap()
+        val systemByPhone = loadSystemContactSnapshots()
+        val deletedMarkers = repository.getDeletedContactMarkers()
+        val activePhoneKeys = appByPhone.keys
+        val deletedPhoneKeys = deletedMarkers.map { it.phoneKey }.filter { it !in activePhoneKeys }.toSet()
+        val details = mutableListOf<PhoneSyncDetail>()
+        var imported = 0
+        var appNameUpdated = 0
+        var appAvatarUpdated = 0
+        var systemInserted = 0
+        var systemUpdated = 0
+        var systemDeleted = 0
+        var appChanged = false
+
+        fun replaceAppContact(old: PhoneContact, updated: PhoneContact) {
+            val index = appMutable.indexOfFirst { it.id == old.id }
+            if (index >= 0) appMutable[index] = updated else appMutable.add(updated)
+            appByPhone[normalizePhone(updated.phone)] = updated
+            appChanged = true
+        }
+
+        deletedPhoneKeys.forEach { phoneKey ->
+            if (systemByPhone.containsKey(phoneKey)) {
+                val deleted = deleteRawContactsByPhoneKey(phoneKey)
+                if (deleted > 0) {
+                    systemDeleted += deleted
+                    details.add(PhoneSyncDetail("系统删除联系人", "", phoneKey, null, PhoneSyncTone.UPDATE))
+                }
+            }
+        }
+
+        for ((phoneKey, systemContact) in systemByPhone) {
+            if (phoneKey in deletedPhoneKeys) continue
+            val appContact = appByPhone[phoneKey]
+            if (appContact == null) {
+                val id = UUID.randomUUID().toString()
+                val localAvatar = if (!systemContact.avatarUri.isNullOrBlank()) {
+                    copyAvatarToPrivateFile(systemContact.avatarUri, id, systemContact.contactId) ?: systemContact.avatarUri
+                } else {
+                    null
+                }
+                val contact = PhoneContact(id = id, name = systemContact.name, phone = phoneKey, avatarUri = localAvatar)
+                appMutable.add(contact)
+                appByPhone[phoneKey] = contact
+                appChanged = true
+                imported++
+                details.add(PhoneSyncDetail("APP导入联系人", contact.name, contact.phone, contact.avatarUri, PhoneSyncTone.ADD))
+                continue
+            }
+
+            var updatedApp = appContact
+            if (updatedApp.name.isBlank() && systemContact.name.isNotBlank()) {
+                updatedApp = updatedApp.copy(name = systemContact.name)
+                appNameUpdated++
+                details.add(PhoneSyncDetail("APP补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD))
+            }
+            if (updatedApp.avatarUri == null && !systemContact.avatarUri.isNullOrBlank()) {
+                val localAvatar = copyAvatarToPrivateFile(systemContact.avatarUri, updatedApp.id, systemContact.contactId) ?: systemContact.avatarUri
+                updatedApp = updatedApp.copy(avatarUri = localAvatar)
+                appAvatarUpdated++
+                details.add(PhoneSyncDetail("APP补头像", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD))
+            }
+            if (updatedApp != appContact) replaceAppContact(appContact, updatedApp)
+
+            val normalizedSystemPhone = normalizePhone(systemContact.phoneNumber)
+            val normalizedAppPhone = normalizePhone(updatedApp.phone)
+            if (normalizedAppPhone.isNotEmpty() && (normalizedSystemPhone != normalizedAppPhone || systemContact.phoneNumber != normalizedAppPhone)) {
+                if (updateSystemContactPhone(systemContact.rawContactId, normalizedAppPhone)) {
+                    systemUpdated++
+                    details.add(PhoneSyncDetail("系统更新号码", updatedApp.name, normalizedAppPhone, updatedApp.avatarUri, PhoneSyncTone.UPDATE))
+                }
+            }
+
+            if (systemContact.name.isBlank() && updatedApp.name.isNotBlank()) {
+                if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
+                    systemUpdated++
+                    details.add(PhoneSyncDetail("系统补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD))
+                }
+            } else if (systemContact.name.isNotBlank() && updatedApp.name.isNotBlank() && systemContact.name != updatedApp.name) {
+                if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
+                    systemUpdated++
+                    details.add(PhoneSyncDetail("系统更新姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.UPDATE))
+                }
+            }
+
+            if (systemContact.avatarUri.isNullOrBlank() && !updatedApp.avatarUri.isNullOrBlank()) {
+                if (upsertSystemContactPhoto(systemContact.rawContactId, updatedApp.avatarUri)) {
+                    systemUpdated++
+                    details.add(PhoneSyncDetail("系统补头像", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD))
+                }
+            }
+        }
+
+        for ((phoneKey, appContact) in appByPhone) {
+            if (phoneKey in deletedPhoneKeys || systemByPhone.containsKey(phoneKey)) continue
+            when (writeContactToPhone(appContact).result) {
+                PhoneWriteResult.INSERTED -> {
+                    systemInserted++
+                    details.add(PhoneSyncDetail("系统写入联系人", appContact.name, appContact.phone, appContact.avatarUri, PhoneSyncTone.ADD))
+                }
+                PhoneWriteResult.UPDATED -> {
+                    systemUpdated++
+                    details.add(PhoneSyncDetail("系统更新联系人", appContact.name, appContact.phone, appContact.avatarUri, PhoneSyncTone.UPDATE))
+                }
+                PhoneWriteResult.NO_CHANGE,
+                PhoneWriteResult.FAILED -> Unit
+            }
+        }
+
+        if (appChanged) repository.replaceContacts(appMutable.sortedWith(contactComparator()))
+
+        return PhoneSyncSummary(
+            imported = imported,
+            nameUpdated = appNameUpdated,
+            avatarUpdated = appAvatarUpdated,
+            inserted = systemInserted,
+            updated = systemUpdated,
+            deleted = systemDeleted,
+            details = details
+        )
+    }
+
+    private fun syncEditedContactToPhone(contactId: String, originalPhone: String) {
+        if (!hasWriteContactsPermission()) return
         lifecycleScope.launch {
-            val exported = withContext(Dispatchers.IO) { exportToPhoneContacts() }
-            progressMessage = null
-            toast("已同步 $exported 个联系人到手机通讯录")
+            withContext(Dispatchers.IO) {
+                val contact = repository.getContact(contactId) ?: return@withContext
+                val oldKey = normalizePhone(originalPhone)
+                val newKey = normalizePhone(contact.phone)
+                if (oldKey.isNotEmpty() && oldKey != newKey) deleteRawContactsByPhoneKey(oldKey)
+                writeContactToPhone(contact)
+            }
         }
     }
 
-    private fun importFromPhoneContacts(): Pair<Int, Int> {
+    private fun syncDeletedContactToPhone(contact: PhoneContact) {
+        if (!hasWriteContactsPermission()) return
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) { deleteRawContactsByPhoneKey(normalizePhone(contact.phone)) }
+        }
+    }
+
+    private fun hasReadContactsPermission(): Boolean = checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+
+    private fun hasWriteContactsPermission(): Boolean = checkSelfPermission(Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED
+
+    private suspend fun importFromPhoneContacts(): PhoneContactsImportResult {
         val mutable = contacts.toMutableList()
         val existingByPhone = mutable.associateBy { normalizePhone(it.phone) }.toMutableMap()
+        val deletedPhoneKeys = repository.getDeletedPhoneKeys()
         var imported = 0
+        var nameUpdated = 0
         var avatarUpdated = 0
+        val details = mutableListOf<PhoneSyncDetail>()
+        val phoneKeysPulledFromPhone = mutableSetOf<String>()
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
@@ -650,19 +863,35 @@ class MainActivity : ComponentActivity() {
             val photoIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.PHOTO_URI)
             while (cursor.moveToNext()) {
                 val systemContactId = cursor.getLong(contactIdIndex)
-                val phone = cursor.getString(phoneIndex)?.trim().orEmpty()
+                val phone = normalizeMainlandMobileNumber(cursor.getString(phoneIndex)?.trim().orEmpty())
                 val normalized = normalizePhone(phone)
                 if (normalized.isEmpty()) continue
+                if (normalized in deletedPhoneKeys) continue
                 val phoneAvatar = cursor.getString(photoIndex)
+                val systemName = cursor.getString(nameIndex)?.trim().orEmpty()
                 val existing = existingByPhone[normalized]
                 if (existing != null) {
-                    if (existing.avatarUri == null && !phoneAvatar.isNullOrBlank()) {
+                    var updated = existing
+                    var changed = false
+                    if (updated.name.isBlank() && systemName.isNotBlank()) {
+                        updated = updated.copy(name = systemName)
+                        changed = true
+                        nameUpdated++
+                        phoneKeysPulledFromPhone.add(normalized)
+                        details.add(PhoneSyncDetail("APP补姓名", systemName, phone, updated.avatarUri))
+                    }
+                    if (updated.avatarUri == null && !phoneAvatar.isNullOrBlank()) {
                         val localAvatar = copyAvatarToPrivateFile(phoneAvatar, existing.id, systemContactId) ?: phoneAvatar
-                        val updated = existing.copy(avatarUri = localAvatar)
+                        updated = updated.copy(avatarUri = localAvatar)
+                        changed = true
+                        avatarUpdated++
+                        phoneKeysPulledFromPhone.add(normalized)
+                        details.add(PhoneSyncDetail("APP补头像", updated.name, phone, localAvatar))
+                    }
+                    if (changed) {
                         mutable.removeAll { it.id == existing.id }
                         mutable.add(updated)
                         existingByPhone[normalized] = updated
-                        avatarUpdated++
                     }
                     continue
                 }
@@ -674,41 +903,199 @@ class MainActivity : ComponentActivity() {
                 }
                 val contact = PhoneContact(
                     id = id,
-                    name = cursor.getString(nameIndex)?.trim().orEmpty().ifBlank { phone },
+                    name = systemName.ifBlank { phone },
                     phone = phone,
                     avatarUri = localAvatar
                 )
                 mutable.add(contact)
                 existingByPhone[normalized] = contact
                 imported++
+                phoneKeysPulledFromPhone.add(normalized)
+                details.add(PhoneSyncDetail("APP导入", contact.name, contact.phone, contact.avatarUri))
             }
         }
         contacts = mutable.sortedWith(contactComparator())
-        return imported to avatarUpdated
+        return PhoneContactsImportResult(imported = imported, nameUpdated = nameUpdated, avatarUpdated = avatarUpdated, details = details, phoneKeysPulledFromPhone = phoneKeysPulledFromPhone)
     }
 
-    private fun exportToPhoneContacts(): Int {
-        var exported = 0
+    private suspend fun exportToPhoneContacts(skipPhoneKeys: Set<String> = emptySet()): PhoneContactsExportResult {
+        var inserted = 0
+        var updated = 0
+        val deleteResult = deleteRemovedContactsFromPhone()
+        val deleted = deleteResult.count
+        val details = deleteResult.details.toMutableList()
         for (contact in contacts) {
-            val rawContactId = findRawContactIdByPhone(contact.phone)
-            if (rawContactId != null) {
-                if (contact.avatarUri != null && upsertSystemContactPhoto(rawContactId, contact.avatarUri)) exported++
-                continue
+            if (normalizePhone(contact.phone) in skipPhoneKeys) continue
+            val outcome = writeContactToPhone(contact)
+            when (outcome.result) {
+                PhoneWriteResult.INSERTED -> inserted++
+                PhoneWriteResult.UPDATED -> updated++
+                PhoneWriteResult.NO_CHANGE,
+                PhoneWriteResult.FAILED -> Unit
             }
-            val operations = arrayListOf<ContentProviderOperation>()
-            operations.add(ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI).withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null).withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null).build())
-            operations.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI).withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0).withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE).withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, contact.name).build())
-            operations.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI).withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0).withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE).withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, contact.phone).withValue(ContactsContract.CommonDataKinds.Phone.TYPE, ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE).build())
-            avatarBytes(contact.avatarUri)?.let { bytes ->
-                operations.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI).withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0).withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Photo.CONTENT_ITEM_TYPE).withValue(ContactsContract.CommonDataKinds.Photo.PHOTO, bytes).build())
+            details += outcome.details
+        }
+        return PhoneContactsExportResult(inserted = inserted, updated = updated, deleted = deleted, details = details)
+    }
+
+    private fun writeContactToPhone(contact: PhoneContact): PhoneWriteOutcome {
+        val rawContactId = findRawContactIdByPhone(contact.phone)
+        if (rawContactId != null) {
+            return if (updateSystemContact(rawContactId, contact)) {
+                PhoneWriteOutcome(PhoneWriteResult.UPDATED, listOf(PhoneSyncDetail("系统更新", contact.name, contact.phone, contact.avatarUri)))
+            } else {
+                PhoneWriteOutcome(PhoneWriteResult.NO_CHANGE)
             }
+        }
+        val operations = arrayListOf<ContentProviderOperation>()
+        operations.add(ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI).withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null).withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null).build())
+        operations.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI).withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0).withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE).withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, contact.name).build())
+        operations.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI).withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0).withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE).withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, contact.phone).withValue(ContactsContract.CommonDataKinds.Phone.TYPE, ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE).build())
+        avatarBytes(contact.avatarUri)?.let { bytes ->
+            operations.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI).withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0).withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Photo.CONTENT_ITEM_TYPE).withValue(ContactsContract.CommonDataKinds.Photo.PHOTO, bytes).build())
+        }
+        return try {
+            contentResolver.applyBatch(ContactsContract.AUTHORITY, operations)
+            PhoneWriteOutcome(PhoneWriteResult.INSERTED, listOf(PhoneSyncDetail("系统写入", contact.name, contact.phone, contact.avatarUri)))
+        } catch (_: Exception) {
+            PhoneWriteOutcome(PhoneWriteResult.FAILED)
+        }
+    }
+
+    private fun updateSystemContact(rawContactId: Long, contact: PhoneContact): Boolean {
+        var changed = false
+        if (updateSystemContactPhone(rawContactId, contact.phone)) changed = true
+        if (updateSystemContactName(rawContactId, contact.name)) changed = true
+        if (contact.avatarUri != null && findPhotoDataId(rawContactId) == null && upsertSystemContactPhoto(rawContactId, contact.avatarUri)) changed = true
+        return changed
+    }
+
+    private fun updateSystemContactPhone(rawContactId: Long, phone: String): Boolean {
+        val current = findSystemContactPhone(rawContactId) ?: return false
+        val normalizedCurrent = normalizePhone(current)
+        val normalizedTarget = normalizePhone(phone)
+        if (normalizedTarget.isEmpty() || normalizedCurrent == normalizedTarget && current == normalizedTarget) return false
+        return try {
+            val operations = arrayListOf(
+                ContentProviderOperation.newUpdate(ContactsContract.Data.CONTENT_URI)
+                    .withSelection("${ContactsContract.Data.RAW_CONTACT_ID}=? AND ${ContactsContract.Data.MIMETYPE}=?", arrayOf(rawContactId.toString(), ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE))
+                    .withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, normalizedTarget)
+                    .build()
+            )
+            contentResolver.applyBatch(ContactsContract.AUTHORITY, operations).sumOf { it.count ?: 0 } > 0
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun updateSystemContactName(rawContactId: Long, name: String): Boolean {
+        if (name.isBlank()) return false
+        if (findSystemContactName(rawContactId) == name) return false
+        return try {
+            val operations = arrayListOf(
+                ContentProviderOperation.newUpdate(ContactsContract.Data.CONTENT_URI)
+                    .withSelection("${ContactsContract.Data.RAW_CONTACT_ID}=? AND ${ContactsContract.Data.MIMETYPE}=?", arrayOf(rawContactId.toString(), ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE))
+                    .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, name)
+                    .build()
+            )
+            contentResolver.applyBatch(ContactsContract.AUTHORITY, operations).sumOf { it.count ?: 0 } > 0
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun findSystemContactName(rawContactId: Long): String? {
+        val projection = arrayOf(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME)
+        val selection = "${ContactsContract.Data.RAW_CONTACT_ID}=? AND ${ContactsContract.Data.MIMETYPE}=?"
+        val args = arrayOf(rawContactId.toString(), ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
+        contentResolver.query(ContactsContract.Data.CONTENT_URI, projection, selection, args, null)?.use { cursor ->
+            if (cursor.moveToFirst()) return cursor.getString(cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME))
+        }
+        return null
+    }
+
+    private fun findSystemContactPhone(rawContactId: Long): String? {
+        val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER)
+        val selection = "${ContactsContract.Data.RAW_CONTACT_ID}=? AND ${ContactsContract.Data.MIMETYPE}=?"
+        val args = arrayOf(rawContactId.toString(), ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+        contentResolver.query(ContactsContract.Data.CONTENT_URI, projection, selection, args, null)?.use { cursor ->
+            if (cursor.moveToFirst()) return cursor.getString(cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER))
+        }
+        return null
+    }
+
+    private fun deleteRawContactsByPhoneKey(phoneKey: String): Int {
+        val rawContactIds = findRawContactIdsByPhoneKey(phoneKey).distinct()
+        var deleted = 0
+        rawContactIds.chunked(50).forEach { batch ->
+            val placeholders = batch.joinToString(",") { "?" }
+            val operations = arrayListOf(
+                ContentProviderOperation.newDelete(ContactsContract.RawContacts.CONTENT_URI)
+                    .withSelection("${ContactsContract.RawContacts._ID} IN ($placeholders)", batch.map { it.toString() }.toTypedArray())
+                    .build()
+            )
             try {
-                contentResolver.applyBatch(ContactsContract.AUTHORITY, operations)
-                exported++
+                deleted += contentResolver.applyBatch(ContactsContract.AUTHORITY, operations).sumOf { it.count ?: 0 }
             } catch (_: Exception) {
             }
         }
-        return exported
+        return deleted
+    }
+
+    private suspend fun deleteRemovedContactsFromPhone(): PhoneContactsDeleteResult {
+        val activePhoneKeys = contacts.map { normalizePhone(it.phone) }.filter { it.isNotEmpty() }.toSet()
+        val deletedMarkers = repository.getDeletedContactMarkers().filter { it.phoneKey !in activePhoneKeys }
+        if (deletedMarkers.isEmpty()) return PhoneContactsDeleteResult()
+        var count = 0
+        val details = mutableListOf<PhoneSyncDetail>()
+        deletedMarkers.forEach { marker ->
+            val deleted = deleteRawContactsByPhoneKey(marker.phoneKey)
+            if (deleted > 0) {
+                count += deleted
+                details.add(PhoneSyncDetail("系统删除", "", marker.phoneKey, null))
+            }
+        }
+        return PhoneContactsDeleteResult(count, details)
+    }
+
+    private fun loadSystemContactSnapshots(): Map<String, SystemContactSnapshot> {
+        val snapshots = linkedMapOf<String, SystemContactSnapshot>()
+        val projection = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
+            ContactsContract.CommonDataKinds.Phone.RAW_CONTACT_ID,
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+            ContactsContract.CommonDataKinds.Phone.NUMBER,
+            ContactsContract.CommonDataKinds.Phone.PHOTO_URI
+        )
+        contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            projection,
+            null,
+            null,
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
+        )?.use { cursor ->
+            val contactIdIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
+            val rawIdIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.RAW_CONTACT_ID)
+            val nameIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+            val phoneIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            val photoIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.PHOTO_URI)
+            while (cursor.moveToNext()) {
+                val phone = cursor.getString(phoneIndex)?.trim().orEmpty()
+                val phoneKey = normalizePhone(phone)
+                if (phoneKey.isEmpty()) continue
+                val snapshot = SystemContactSnapshot(
+                    phoneKey = phoneKey,
+                    phoneNumber = phone,
+                    name = cursor.getString(nameIndex)?.trim().orEmpty(),
+                    avatarUri = cursor.getString(photoIndex),
+                    rawContactId = cursor.getLong(rawIdIndex),
+                    contactId = cursor.getLong(contactIdIndex)
+                )
+                val existing = snapshots[phoneKey]
+                if (existing == null || snapshot.score() > existing.score()) snapshots[phoneKey] = snapshot
+            }
+        }
+        return snapshots
     }
 
     private fun findRawContactIdByPhone(phone: String): Long? {
@@ -723,6 +1110,22 @@ class MainActivity : ComponentActivity() {
             }
         }
         return null
+    }
+
+    private fun findRawContactIdsByPhoneKey(phoneKey: String): List<Long> {
+        if (phoneKey.isEmpty()) return emptyList()
+        val rawIds = mutableListOf<Long>()
+        val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER, ContactsContract.CommonDataKinds.Phone.RAW_CONTACT_ID)
+        contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, projection, null, null, null)?.use { cursor ->
+            val phoneIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            val rawIdIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.RAW_CONTACT_ID)
+            while (cursor.moveToNext()) {
+                if (normalizePhone(cursor.getString(phoneIndex).orEmpty()) == phoneKey) {
+                    rawIds.add(cursor.getLong(rawIdIndex))
+                }
+            }
+        }
+        return rawIds
     }
 
     private fun upsertSystemContactPhoto(rawContactId: Long, avatarUri: String): Boolean {
@@ -835,7 +1238,7 @@ class MainActivity : ComponentActivity() {
         File(cacheDir, "exports").listFiles { file -> file.name.startsWith("phonebook_backup_") && file.extension == "pbk" }?.forEach { it.delete() }
     }
 
-    private fun importMigrationPackage(uri: Uri): Pair<Int, Int>? {
+    private suspend fun importMigrationPackage(uri: Uri): Pair<Int, Int>? {
         val temp = File(cacheDir, "imports/migration_${System.currentTimeMillis()}.pbk").apply { parentFile?.mkdirs() }
         return try {
             contentResolver.openInputStream(uri)?.use { input -> FileOutputStream(temp).use { output -> input.copyTo(output) } } ?: return null
@@ -843,15 +1246,17 @@ class MainActivity : ComponentActivity() {
             var imported = 0
             var updated = 0
             val existingByPhone = mutable.associateBy { normalizePhone(it.phone) }.toMutableMap()
+            val deletedPhoneKeys = repository.getDeletedPhoneKeys()
             ZipFile(temp).use { zip ->
                 val contactsEntry = zip.getEntry("contacts.json") ?: return null
                 val root = JSONObject(zip.getInputStream(contactsEntry).bufferedReader(Charsets.UTF_8).use { it.readText() })
                 val array = root.getJSONArray("contacts")
                 for (i in 0 until array.length()) {
                     val item = array.getJSONObject(i)
-                    val phone = item.optString("phone").trim()
+                    val phone = normalizeMainlandMobileNumber(item.optString("phone").trim())
                     val normalized = normalizePhone(phone)
                     if (normalized.isEmpty()) continue
+                    if (normalized in deletedPhoneKeys) continue
                     val existing = existingByPhone[normalized]
                     val avatarEntry = item.optString("avatar").takeIf { it.startsWith("avatars/") }
                     val avatarUri = if (existing?.avatarUri.isNullOrBlank()) avatarEntry?.let { extractMigrationAvatar(zip, it, existing?.id ?: item.optString("id").ifBlank { UUID.randomUUID().toString() }) } else existing?.avatarUri
@@ -1006,7 +1411,7 @@ class MainActivity : ComponentActivity() {
         return Brush.horizontalGradient(palettes[abs(contact.displayName().hashCode()) % palettes.size])
     }
 
-    private fun normalizePhone(phone: String): String = phone.filter { it.isDigit() || it == '+' }
+    private fun normalizePhone(phone: String): String = normalizeMainlandMobileNumber(phone).ifBlank { phone.filter { it.isDigit() || it == '+' } }
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
@@ -1018,4 +1423,100 @@ class MainActivity : ComponentActivity() {
         private val MutedColor = Color(0xFF64748B)
         private val SurfaceColor = Color(0xFFF8FAFC)
     }
+}
+
+private data class PhoneSyncSummary(
+    val imported: Int = 0,
+    val nameUpdated: Int = 0,
+    val avatarUpdated: Int = 0,
+    val inserted: Int = 0,
+    val updated: Int = 0,
+    val deleted: Int = 0,
+    val details: List<PhoneSyncDetail> = emptyList()
+) {
+    fun lines(): List<String> {
+        if (details.isNotEmpty()) {
+            return details.groupingBy { it.type }.eachCount().map { (type, count) -> "$type $count 个" }
+        }
+        val result = buildList {
+            if (imported > 0) add("APP：导入 $imported 个")
+            if (nameUpdated > 0) add("APP：补姓名 $nameUpdated 个")
+            if (avatarUpdated > 0) add("APP：补头像 $avatarUpdated 个")
+            if (inserted > 0) add("系统：写入 $inserted 个")
+            if (updated > 0) add("系统：更新 $updated 个")
+            if (deleted > 0) add("系统：删除 $deleted 个")
+        }
+        return result.ifEmpty { listOf("没有变化") }
+    }
+
+    fun detailsJson(): String {
+        val array = JSONArray()
+        details.forEach { detail ->
+            array.put(
+                JSONObject()
+                    .put("type", detail.type)
+                    .put("name", detail.name)
+                    .put("phone", detail.phone)
+                    .put("avatarUri", detail.avatarUri.orEmpty())
+                    .put("tone", detail.tone)
+            )
+        }
+        return array.toString()
+    }
+}
+
+private data class SystemContactSnapshot(
+    val phoneKey: String,
+    val phoneNumber: String,
+    val name: String,
+    val avatarUri: String?,
+    val rawContactId: Long,
+    val contactId: Long
+) {
+    fun score(): Int = (if (name.isNotBlank()) 1 else 0) + (if (!avatarUri.isNullOrBlank()) 2 else 0)
+}
+
+private data class PhoneContactsImportResult(
+    val imported: Int = 0,
+    val nameUpdated: Int = 0,
+    val avatarUpdated: Int = 0,
+    val details: List<PhoneSyncDetail> = emptyList(),
+    val phoneKeysPulledFromPhone: Set<String> = emptySet()
+)
+
+private data class PhoneContactsExportResult(
+    val inserted: Int = 0,
+    val updated: Int = 0,
+    val deleted: Int = 0,
+    val details: List<PhoneSyncDetail> = emptyList()
+)
+
+private data class PhoneContactsDeleteResult(
+    val count: Int = 0,
+    val details: List<PhoneSyncDetail> = emptyList()
+)
+
+data class PhoneSyncDetail(
+    val type: String,
+    val name: String,
+    val phone: String,
+    val avatarUri: String?,
+    val tone: String = PhoneSyncTone.ADD
+)
+
+object PhoneSyncTone {
+    const val ADD = "add"
+    const val UPDATE = "update"
+}
+
+private data class PhoneWriteOutcome(
+    val result: PhoneWriteResult,
+    val details: List<PhoneSyncDetail> = emptyList()
+)
+
+private enum class PhoneWriteResult {
+    INSERTED,
+    UPDATED,
+    NO_CHANGE,
+    FAILED
 }
