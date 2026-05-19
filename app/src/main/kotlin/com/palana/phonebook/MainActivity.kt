@@ -768,10 +768,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            if (systemContact.name.isBlank() && updatedApp.name.isNotBlank()) {
+            if ((systemContact.name.isBlank() || systemNameIsPlaceholder) && updatedApp.name.isNotBlank()) {
                 if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
                     systemUpdated++
-                    details.add(PhoneSyncDetail("系统补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.NAME))
+                    details.add(PhoneSyncDetail(if (systemNameIsPlaceholder) "系统更新姓名" else "系统补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, if (systemNameIsPlaceholder) PhoneSyncTone.UPDATE else PhoneSyncTone.ADD, PhoneSyncField.NAME, PhoneSyncTarget.SYSTEM, if (systemNameIsPlaceholder) systemContact.name else null))
                 }
             } else if (systemContact.name.isNotBlank() && updatedApp.name.isNotBlank() && systemContact.name != updatedApp.name && (systemNameIsPlaceholder || !isPlaceholderNameForPhone(updatedApp.name, updatedApp.phone))) {
                 if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
@@ -780,7 +780,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            if (systemContact.avatarUri.isNullOrBlank() && !updatedApp.avatarUri.isNullOrBlank()) {
+            if (findPhotoDataId(systemContact.rawContactId) == null && !updatedApp.avatarUri.isNullOrBlank()) {
                 if (upsertSystemContactPhoto(systemContact.rawContactId, updatedApp.avatarUri)) {
                     systemUpdated++
                     details.add(PhoneSyncDetail("系统补头像", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.AVATAR))
