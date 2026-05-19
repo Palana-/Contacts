@@ -176,7 +176,7 @@ class SyncDetailsActivity : ComponentActivity() {
         val target: String
     ) {
         fun title(): String = type.replaceFirst("APP", "APP-").replaceFirst("系统", "系统-")
-        fun shouldShowName(): Boolean = name.isNotBlank() && name != phone
+        fun shouldShowName(): Boolean = name.isNotBlank() && (name != phone || field == PhoneSyncField.NAME)
         fun toneColor(): Color = if (tone == PhoneSyncTone.UPDATE) DangerColor else Brand
         fun isAvatarChanged(): Boolean = field == PhoneSyncField.AVATAR || field == PhoneSyncField.CONTACT
         fun fieldColor(targetField: String): Color {
