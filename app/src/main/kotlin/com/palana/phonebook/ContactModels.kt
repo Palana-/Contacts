@@ -12,8 +12,12 @@ data class PhoneContact(
     val updatedAt: Long = System.currentTimeMillis(),
     val remoteId: String? = null,
     val lastSyncedAt: Long = 0L,
+    val avatarUpdatedAt: Long = 0L,
+    val avatarSyncedAt: Long = 0L,
     val syncState: ContactSyncState = ContactSyncState.PENDING
-)
+) {
+    fun hasUnsyncedAvatar(): Boolean = !avatarUri.isNullOrBlank() && avatarUpdatedAt > avatarSyncedAt
+}
 
 enum class ContactSyncState {
     SYNCED,

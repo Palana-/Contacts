@@ -609,6 +609,8 @@ class MainActivity : ComponentActivity() {
             intent.putExtra(EditContactActivity.EXTRA_AVATAR_URI, it.avatarUri)
             intent.putExtra(EditContactActivity.EXTRA_CREATED_AT, it.createdAt)
             intent.putExtra(EditContactActivity.EXTRA_RECENT_AT, it.recentAt)
+            intent.putExtra(EditContactActivity.EXTRA_AVATAR_UPDATED_AT, it.avatarUpdatedAt)
+            intent.putExtra(EditContactActivity.EXTRA_AVATAR_SYNCED_AT, it.avatarSyncedAt)
         }
         editContactLauncher.launch(intent)
     }
@@ -803,7 +805,8 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                if (!candidate.hasPhoto && !updatedApp.avatarUri.isNullOrBlank()) {
+                val shouldWriteAvatar = updatedApp.hasUnsyncedAvatar() || !candidate.hasPhoto
+                if (shouldWriteAvatar && !updatedApp.avatarUri.isNullOrBlank()) {
                     if (upsertSystemContactPhoto(candidate.rawContactId, updatedApp.avatarUri)) avatarChanged = true
                 }
             }
@@ -820,13 +823,19 @@ class MainActivity : ComponentActivity() {
             }
             if (avatarChanged) {
                 systemUpdated++
-                details.add(PhoneSyncDetail("系统补头像", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.AVATAR))
+                val avatarSyncedAt = System.currentTimeMillis()
+                replaceAppContact(updatedApp, updatedApp.copy(avatarSyncedAt = avatarSyncedAt, lastSyncedAt = avatarSyncedAt, syncState = ContactSyncState.SYNCED))
+                details.add(PhoneSyncDetail(if (updatedApp.hasUnsyncedAvatar()) "系统更新头像" else "系统补头像", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, if (updatedApp.hasUnsyncedAvatar()) PhoneSyncTone.UPDATE else PhoneSyncTone.ADD, PhoneSyncField.AVATAR))
             }
         }
 
         for ((phoneKey, appContact) in appByPhone) {
             if (phoneKey in deletedPhoneKeys || systemByPhone.containsKey(phoneKey)) continue
-            when (writeContactToPhone(appContact).result) {
+            val outcome = writeContactToPhone(appContact)
+            if (appContact.hasUnsyncedAvatar() && (outcome.result == PhoneWriteResult.INSERTED || outcome.result == PhoneWriteResult.UPDATED)) {
+                repository.markAvatarSynced(appContact.id)
+            }
+            when (outcome.result) {
                 PhoneWriteResult.INSERTED -> {
                     systemInserted++
                     details.add(PhoneSyncDetail("系统写入联系人", appContact.name, appContact.phone, appContact.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.CONTACT))
@@ -858,6 +867,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 val contact = repository.getContact(contactId) ?: return@withContext
+                var avatarSynced = false
                 val oldKey = normalizePhone(originalPhone)
                 val newKey = normalizePhone(contact.phone)
                 if (oldKey.isNotEmpty() && oldKey != newKey) {
@@ -865,14 +875,19 @@ class MainActivity : ComponentActivity() {
                     if (rawContactId != null) {
                         updateSystemContactPhone(rawContactId, newKey)
                         updateSystemContactName(rawContactId, contact.name)
-                        if (contact.avatarUri != null && findPhotoDataId(rawContactId) == null) {
-                            upsertSystemContactPhoto(rawContactId, contact.avatarUri)
+                        if (contact.avatarUri != null && (contact.hasUnsyncedAvatar() || findPhotoDataId(rawContactId) == null)) {
+                            avatarSynced = upsertSystemContactPhoto(rawContactId, contact.avatarUri)
                         }
                     } else {
-                        writeContactToPhone(contact)
+                        val outcome = writeContactToPhone(contact)
+                        avatarSynced = outcome.result == PhoneWriteResult.INSERTED || outcome.result == PhoneWriteResult.UPDATED
                     }
                 } else {
-                    writeContactToPhone(contact)
+                    val outcome = writeContactToPhone(contact)
+                    avatarSynced = outcome.result == PhoneWriteResult.INSERTED || outcome.result == PhoneWriteResult.UPDATED
+                }
+                if (avatarSynced && contact.hasUnsyncedAvatar()) {
+                    repository.markAvatarSynced(contact.id)
                 }
             }
         }
@@ -987,6 +1002,9 @@ class MainActivity : ComponentActivity() {
                 PhoneWriteResult.NO_CHANGE,
                 PhoneWriteResult.FAILED -> Unit
             }
+            if (contact.hasUnsyncedAvatar() && (outcome.result == PhoneWriteResult.INSERTED || outcome.result == PhoneWriteResult.UPDATED)) {
+                repository.markAvatarSynced(contact.id)
+            }
             details += outcome.details
         }
         return PhoneContactsExportResult(inserted = inserted, updated = updated, deleted = deleted, details = details)
@@ -1020,7 +1038,7 @@ class MainActivity : ComponentActivity() {
         var changed = false
         if (updateSystemContactPhone(rawContactId, contact.phone)) changed = true
         if (updateSystemContactName(rawContactId, contact.name)) changed = true
-        if (contact.avatarUri != null && findPhotoDataId(rawContactId) == null && upsertSystemContactPhoto(rawContactId, contact.avatarUri)) changed = true
+        if (contact.avatarUri != null && (contact.hasUnsyncedAvatar() || findPhotoDataId(rawContactId) == null) && upsertSystemContactPhoto(rawContactId, contact.avatarUri)) changed = true
         return changed
     }
 

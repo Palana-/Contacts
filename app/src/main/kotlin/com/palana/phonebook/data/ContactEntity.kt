@@ -24,6 +24,8 @@ data class ContactEntity(
     val updatedAt: Long,
     val remoteId: String?,
     val lastSyncedAt: Long,
+    val avatarUpdatedAt: Long,
+    val avatarSyncedAt: Long,
     val syncState: String
 )
 
@@ -38,6 +40,8 @@ fun ContactEntity.toContact(): PhoneContact {
         updatedAt = updatedAt,
         remoteId = remoteId,
         lastSyncedAt = lastSyncedAt,
+        avatarUpdatedAt = avatarUpdatedAt,
+        avatarSyncedAt = avatarSyncedAt,
         syncState = runCatching { ContactSyncState.valueOf(syncState) }.getOrDefault(ContactSyncState.PENDING)
     )
 }
@@ -53,6 +57,8 @@ fun PhoneContact.toEntity(defaultSyncState: ContactSyncState = syncState): Conta
         updatedAt = updatedAt,
         remoteId = remoteId,
         lastSyncedAt = lastSyncedAt,
+        avatarUpdatedAt = avatarUpdatedAt,
+        avatarSyncedAt = avatarSyncedAt,
         syncState = defaultSyncState.name
     )
 }

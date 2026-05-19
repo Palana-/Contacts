@@ -62,6 +62,7 @@ class ContactRepository private constructor(
                     activeChanges.map {
                     it.copy(
                         lastSyncedAt = syncedAt,
+                        avatarSyncedAt = if (it.hasUnsyncedAvatar()) syncedAt else it.avatarSyncedAt,
                         syncState = ContactSyncState.SYNCED
                     ).toEntity(ContactSyncState.SYNCED)
                     }
@@ -69,6 +70,10 @@ class ContactRepository private constructor(
             }
         }
         result
+    }
+
+    suspend fun markAvatarSynced(id: String) = withContext(Dispatchers.IO) {
+        dao.markAvatarSynced(id, System.currentTimeMillis())
     }
 
     private fun List<PhoneContact>.dedupeByPhone(): List<PhoneContact> {

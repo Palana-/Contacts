@@ -76,6 +76,9 @@ class EditContactActivity : ComponentActivity() {
     private var createdAt: Long = 0L
     private var recentAt: Long = 0L
     private var originalPhone: String = ""
+    private var originalAvatarUri: String? = null
+    private var avatarUpdatedAt: Long = 0L
+    private var avatarSyncedAt: Long = 0L
     private var name by mutableStateOf("")
     private var phone by mutableStateOf("")
     private var avatarUri by mutableStateOf<String?>(null)
@@ -125,8 +128,11 @@ class EditContactActivity : ComponentActivity() {
         phone = normalizeMainlandMobileNumber(intent.getStringExtra(EXTRA_PHONE).orEmpty())
         originalPhone = phone
         avatarUri = intent.getStringExtra(EXTRA_AVATAR_URI)
+        originalAvatarUri = avatarUri
         createdAt = intent.getLongExtra(EXTRA_CREATED_AT, System.currentTimeMillis())
         recentAt = intent.getLongExtra(EXTRA_RECENT_AT, 0L)
+        avatarUpdatedAt = intent.getLongExtra(EXTRA_AVATAR_UPDATED_AT, 0L)
+        avatarSyncedAt = intent.getLongExtra(EXTRA_AVATAR_SYNCED_AT, 0L)
 
         setContent {
             EditContactTheme {
@@ -345,6 +351,8 @@ class EditContactActivity : ComponentActivity() {
         }
 
         val id = contactId ?: UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val savedAvatarUpdatedAt = if (avatarUri != originalAvatarUri) now else avatarUpdatedAt
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 repository.upsertContact(
@@ -353,8 +361,10 @@ class EditContactActivity : ComponentActivity() {
                         name = trimmedName,
                         phone = trimmedPhone,
                         avatarUri = avatarUri,
-                        createdAt = if (contactId == null) System.currentTimeMillis() else createdAt,
-                        recentAt = recentAt
+                        createdAt = if (contactId == null) now else createdAt,
+                        recentAt = recentAt,
+                        avatarUpdatedAt = savedAvatarUpdatedAt,
+                        avatarSyncedAt = avatarSyncedAt
                     )
                 )
             }
@@ -366,7 +376,7 @@ class EditContactActivity : ComponentActivity() {
                     .putExtra(EXTRA_NAME, trimmedName)
                     .putExtra(EXTRA_PHONE, trimmedPhone)
                     .putExtra(EXTRA_AVATAR_URI, avatarUri)
-                    .putExtra(EXTRA_CREATED_AT, if (contactId == null) System.currentTimeMillis() else createdAt)
+                    .putExtra(EXTRA_CREATED_AT, if (contactId == null) now else createdAt)
                     .putExtra(EXTRA_RECENT_AT, recentAt)
             )
             finish()
@@ -402,6 +412,8 @@ class EditContactActivity : ComponentActivity() {
         const val EXTRA_AVATAR_URI = "avatarUri"
         const val EXTRA_CREATED_AT = "createdAt"
         const val EXTRA_RECENT_AT = "recentAt"
+        const val EXTRA_AVATAR_UPDATED_AT = "avatarUpdatedAt"
+        const val EXTRA_AVATAR_SYNCED_AT = "avatarSyncedAt"
 
         private val Brand = Color(0xFF0891B2)
         private val TextColor = Color(0xFF0F172A)

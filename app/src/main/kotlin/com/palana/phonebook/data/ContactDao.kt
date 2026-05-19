@@ -32,6 +32,9 @@ interface ContactDao {
     @Query("UPDATE contacts SET syncState = 'DELETED', updatedAt = :updatedAt WHERE id = :id")
     suspend fun markDeleted(id: String, updatedAt: Long)
 
+    @Query("UPDATE contacts SET avatarSyncedAt = :syncedAt, lastSyncedAt = :syncedAt, syncState = 'SYNCED' WHERE id = :id")
+    suspend fun markAvatarSynced(id: String, syncedAt: Long)
+
     @Query("DELETE FROM contacts WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<String>)
 
