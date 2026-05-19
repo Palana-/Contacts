@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -142,6 +143,13 @@ class EditContactActivity : ComponentActivity() {
                     onValueChange = { name = it },
                     label = { Text("姓名") },
                     singleLine = true,
+                    trailingIcon = {
+                        if (name.isNotEmpty()) {
+                            IconButton(onClick = { name = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "清除姓名", tint = MutedColor)
+                            }
+                        }
+                    },
                     textStyle = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -151,6 +159,13 @@ class EditContactActivity : ComponentActivity() {
                     onValueChange = { phone = normalizeMainlandMobileNumber(it) },
                     label = { Text("电话") },
                     singleLine = true,
+                    trailingIcon = {
+                        if (phone.isNotEmpty()) {
+                            IconButton(onClick = { phone = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "清除电话", tint = MutedColor)
+                            }
+                        }
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     visualTransformation = PhoneNumberVisualTransformation(),
                     textStyle = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold),
