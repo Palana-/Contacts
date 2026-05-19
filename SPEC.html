@@ -1,0 +1,1595 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>脸谱通讯录 - 设计方案</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0891B2;
+            --primary-light: #22D3EE;
+            --cta: #059669;
+            --bg: #F8FAFC;
+            --text: #1E293B;
+            --text-light: #64748B;
+            --white: #FFFFFF;
+            --border: #E2E8F0;
+            --shadow: rgba(0, 0, 0, 0.08);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: var(--white);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            z-index: 100;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        nav .logo {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        nav .logo svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        nav ul {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        nav a {
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        nav a:hover {
+            color: var(--primary);
+        }
+
+        /* Hero Section */
+        .hero {
+            padding: 8rem 2rem 4rem;
+            text-align: center;
+            background: linear-gradient(180deg, var(--white) 0%, var(--bg) 100%);
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--cta) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-light);
+            max-width: 600px;
+            margin: 0 auto 2rem;
+        }
+
+        .hero-tags {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .tag {
+            background: var(--white);
+            border: 2px solid var(--primary);
+            color: var(--primary);
+            padding: 0.5rem 1.25rem;
+            border-radius: 2rem;
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+
+        /* Phone Mockup Section */
+        .mockup-section {
+            padding: 4rem 2rem;
+            display: flex;
+            justify-content: center;
+            gap: 3rem;
+            flex-wrap: wrap;
+            background: #F1F5F9;
+        }
+
+        .phone-mockup {
+            width: 320px;
+            height: 640px;
+            background: #1a1a1a;
+            border-radius: 2.5rem;
+            padding: 0.75rem;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+
+        .phone-screen {
+            width: 100%;
+            height: 100%;
+            background: var(--white);
+            border-radius: 2rem;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Status Bar - Safe Area for Camera */
+        .phone-status-bar {
+            height: 40px;
+            background: var(--primary);
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 8px;
+            flex-shrink: 0;
+        }
+
+        .status-bar-time {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: white;
+        }
+
+        /* Phone Tabs - Bottom */
+        .phone-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.75rem;
+            padding-bottom: 0;
+        }
+
+        .phone-tabs-bottom {
+            display: flex;
+            justify-content: space-around;
+            padding: 0.5rem 0.25rem;
+            padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+            background: var(--white);
+            border-top: 1px solid var(--border);
+        }
+
+        .phone-tab {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.2rem;
+            color: var(--text-light);
+            font-size: 0.5rem;
+            cursor: pointer;
+            transition: color 0.2s;
+            padding: 0.2rem 0.4rem;
+            min-width: 48px;
+        }
+
+        .phone-tab.active {
+            color: var(--primary);
+        }
+
+        .phone-tab svg {
+            width: 22px;
+            height: 22px;
+        }
+
+        /* Contact Grid - Reference Image Style */
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.5rem;
+        }
+
+        .contact-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.5rem;
+            background: var(--white);
+            border-radius: 0.75rem;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 1px solid var(--border);
+        }
+
+        .contact-card:hover {
+            transform: scale(1.02);
+            box-shadow: 0 2px 8px var(--shadow);
+        }
+
+        .contact-card:active {
+            transform: scale(0.98);
+        }
+
+        .contact-avatar {
+            width: 100%;
+            aspect-ratio: 1;
+            border-radius: 0.5rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 600;
+            overflow: hidden;
+        }
+
+        .contact-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .contact-name {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text);
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+        }
+
+        .fab {
+            position: absolute;
+            bottom: 4.5rem;
+            right: 1rem;
+            width: 56px;
+            height: 56px;
+            background: var(--primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            box-shadow: 0 4px 12px rgba(8, 145, 178, 0.4);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .fab:hover {
+            transform: scale(1.1);
+        }
+
+        .fab svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        /* Detail Page */
+        .page {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .page.active {
+            display: flex;
+            flex: 1;
+        }
+
+        .page-header {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background: var(--white);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .back-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            color: var(--primary);
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 0.5rem;
+            margin-left: -0.5rem;
+            border-radius: 0.5rem;
+            transition: background 0.2s;
+        }
+
+        .back-btn:hover {
+            background: var(--bg);
+        }
+
+        .back-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .page-title {
+            flex: 1;
+            text-align: center;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-right: 3rem;
+        }
+
+        .detail-content {
+            flex: 1;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .detail-avatar {
+            width: 140px;
+            height: 140px;
+            border-radius: 1rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            margin: 0 auto 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 3.5rem;
+            font-weight: 600;
+            overflow: hidden;
+        }
+
+        .detail-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .detail-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 0.25rem;
+        }
+
+        .detail-phone {
+            font-size: 1rem;
+            color: var(--text-light);
+            margin-bottom: 2rem;
+        }
+
+        .detail-info {
+            background: var(--bg);
+            border-radius: 1rem;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            text-align: left;
+        }
+
+        .detail-info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .detail-info-row:last-child {
+            border-bottom: none;
+        }
+
+        .detail-info-label {
+            color: var(--text-light);
+            font-size: 0.875rem;
+        }
+
+        .detail-info-value {
+            color: var(--text);
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .detail-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+
+        .detail-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem 1.5rem;
+            background: var(--white);
+            border: 2px solid var(--border);
+            border-radius: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text);
+            font-size: 0.75rem;
+            font-weight: 500;
+            flex: 1;
+        }
+
+        .detail-btn:hover {
+            border-color: var(--primary);
+            background: var(--bg);
+        }
+
+        .detail-btn.call {
+            background: var(--cta);
+            border-color: var(--cta);
+            color: white;
+        }
+
+        .detail-btn.delete {
+            background: #FEE2E2;
+            border-color: #FECACA;
+            color: #DC2626;
+        }
+
+        .detail-btn svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        /* Add/Edit Contact Page */
+        .form-content {
+            flex: 1;
+            padding: 1.5rem;
+            overflow-y: auto;
+        }
+
+        .add-avatar-picker {
+            width: 120px;
+            height: 120px;
+            border-radius: 1rem;
+            border: 3px dashed var(--border);
+            margin: 0 auto 1.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: border-color 0.2s;
+            color: var(--text-light);
+            font-size: 0.75rem;
+            background: var(--bg);
+        }
+
+        .add-avatar-picker:hover {
+            border-color: var(--primary);
+        }
+
+        .add-avatar-picker svg {
+            width: 32px;
+            height: 32px;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-light);
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            border: 2px solid var(--border);
+            border-radius: 0.75rem;
+            font-size: 1rem;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .form-hint {
+            font-size: 0.625rem;
+            color: var(--cta);
+            margin-top: 0.5rem;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 0.875rem;
+            border-radius: 0.75rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            font-family: inherit;
+        }
+
+        .btn-cancel {
+            background: var(--white);
+            border: 2px solid var(--border);
+            color: var(--text);
+        }
+
+        .btn-save {
+            background: var(--primary);
+            color: white;
+        }
+
+        /* Import/Export Page */
+        .import-export-content {
+            flex: 1;
+            padding: 1.5rem;
+        }
+
+        .io-section {
+            background: var(--white);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            border: 1px solid var(--border);
+        }
+
+        .io-section h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .io-section h3 svg {
+            width: 20px;
+            height: 20px;
+            color: var(--primary);
+        }
+
+        .io-section p {
+            font-size: 0.875rem;
+            color: var(--text-light);
+            margin-bottom: 1rem;
+        }
+
+        .io-btn {
+            width: 100%;
+            padding: 0.875rem;
+            border-radius: 0.75rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid var(--primary);
+            background: transparent;
+            color: var(--primary);
+            font-family: inherit;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .io-btn:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        .io-btn.primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .io-btn.primary:hover {
+            background: #077299;
+        }
+
+        .io-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .sync-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            background: #ECFDF5;
+            border-radius: 0.5rem;
+            color: var(--cta);
+            font-size: 0.75rem;
+            margin-top: 1rem;
+        }
+
+        .sync-indicator svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Empty State */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 3rem;
+            color: var(--text-light);
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .empty-state p {
+            font-size: 0.875rem;
+            text-align: center;
+        }
+
+        /* Features Section */
+        .features {
+            padding: 4rem 2rem;
+            background: var(--white);
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 3rem;
+            color: var(--text);
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .feature-card {
+            background: var(--bg);
+            border-radius: 1.5rem;
+            padding: 2rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px var(--shadow);
+        }
+
+        .feature-icon {
+            width: 56px;
+            height: 56px;
+            background: var(--primary);
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            margin-bottom: 1rem;
+        }
+
+        .feature-icon svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        .feature-card h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--text);
+        }
+
+        .feature-card p {
+            color: var(--text-light);
+            font-size: 0.875rem;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 3rem 2rem;
+            background: var(--text);
+            color: var(--bg);
+        }
+
+        footer p {
+            opacity: 0.7;
+            font-size: 0.875rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav ul {
+                display: none;
+            }
+
+            .hero h1 {
+                font-size: 2rem;
+            }
+
+            .phone-mockup {
+                width: 100%;
+                max-width: 320px;
+                height: 580px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="8" r="4"/>
+                <path d="M4 20c0-4 4-6 8-6s8 2 8 6"/>
+            </svg>
+            脸谱通讯录
+        </div>
+        <ul>
+            <li><a href="#overview">原型预览</a></li>
+            <li><a href="#features">功能说明</a></li>
+        </ul>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <h1>脸谱通讯录</h1>
+        <p>专为不识字用户设计的视觉化通讯录应用，以头像照片为核心，点击即可拨号，简单直观</p>
+        <div class="hero-tags">
+            <span class="tag">Flutter 跨平台</span>
+            <span class="tag">头像优先</span>
+            <span class="tag">系统同步</span>
+            <span class="tag">一键拨号</span>
+        </div>
+    </section>
+
+    <!-- Phone Mockup Section -->
+    <section class="mockup-section" id="overview">
+        <!-- Phone 1: Contact List -->
+        <div class="phone-mockup" id="phoneList">
+            <div class="phone-screen">
+                <div class="phone-status-bar">
+                    <span class="status-bar-time">9:41</span>
+                </div>
+                <div class="phone-content">
+                    <div class="contact-grid">
+                        <div class="contact-card" onclick="showDetail('张三', '138****8888')">
+                            <div class="contact-avatar">张</div>
+                            <span class="contact-name">张三</span>
+                        </div>
+                        <div class="contact-card" onclick="showDetail('李四', '139****6666')">
+                            <div class="contact-avatar" style="background: linear-gradient(135deg, #059669 0%, #34D399 100%);">李</div>
+                            <span class="contact-name">李四</span>
+                        </div>
+                        <div class="contact-card" onclick="showDetail('王五', '137****5555')">
+                            <div class="contact-avatar" style="background: linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%);">王</div>
+                            <span class="contact-name">王五</span>
+                        </div>
+                        <div class="contact-card" onclick="showDetail('赵六', '136****4444')">
+                            <div class="contact-avatar" style="background: linear-gradient(135deg, #DC2626 0%, #F87171 100%);">赵</div>
+                            <span class="contact-name">赵六</span>
+                        </div>
+                        <div class="contact-card" onclick="showDetail('陈七', '135****3333')">
+                            <div class="contact-avatar" style="background: linear-gradient(135deg, #F59E0B 0%, #FCD34D 100%);">陈</div>
+                            <span class="contact-name">陈七</span>
+                        </div>
+                        <div class="contact-card" onclick="showDetail('杨八', '134****2222')">
+                            <div class="contact-avatar" style="background: linear-gradient(135deg, #EC4899 0%, #F472B6 100%);">杨</div>
+                            <span class="contact-name">杨八</span>
+                        </div>
+                        <div class="contact-card" onclick="showDetail('黄九', '133****1111')">
+                            <div class="contact-avatar" style="background: linear-gradient(135deg, #06B6D4 0%, #67E8F9 100%);">黄</div>
+                            <span class="contact-name">黄九</span>
+                        </div>
+                        <div class="contact-card" onclick="showDetail('周十', '132****0000')">
+                            <div class="contact-avatar" style="background: linear-gradient(135deg, #84CC16 0%, #BEF264 100%);">周</div>
+                            <span class="contact-name">周十</span>
+                        </div>
+                        <div class="contact-card" onclick="showDetail('吴一', '131****9999')">
+                            <div class="contact-avatar" style="background: linear-gradient(135deg, #EF4444 0%, #FCA5A5 100%);">吴</div>
+                            <span class="contact-name">吴一</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="fab" onclick="showPage('add')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"/>
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                </div>
+                <div class="phone-tabs-bottom">
+                    <div class="phone-tab active" onclick="showPage('list')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                        <span>通讯录</span>
+                    </div>
+                    <div class="phone-tab" onclick="showPage('favorites')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                        </svg>
+                        <span>收藏</span>
+                    </div>
+                    <div class="phone-tab" onclick="showPage('recent')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        <span>最近</span>
+                    </div>
+                    <div class="phone-tab" onclick="showPage('more')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="1"/>
+                            <circle cx="12" cy="5" r="1"/>
+                            <circle cx="12" cy="19" r="1"/>
+                        </svg>
+                        <span>更多</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phone 2: Detail Page -->
+        <div class="phone-mockup" id="phoneDetail" style="display: none;">
+            <div class="phone-screen">
+                <div class="phone-status-bar">
+                    <span class="status-bar-time">9:41</span>
+                </div>
+                <div class="page active">
+                    <div class="page-header" onclick="showPage('list')">
+                        <div class="back-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="15 18 9 12 15 6"/>
+                            </svg>
+                            返回
+                        </div>
+                    </div>
+                    <div class="detail-content">
+                        <div class="detail-avatar" id="detailAvatar">张</div>
+                        <div class="detail-name" id="detailName">张三</div>
+                        <div class="detail-phone" id="detailPhone">138****8888</div>
+                        <div class="detail-info">
+                            <div class="detail-info-row">
+                                <span class="detail-info-label">手机</span>
+                                <span class="detail-info-value" id="detailPhoneFull">13812348888</span>
+                            </div>
+                            <div class="detail-info-row">
+                                <span class="detail-info-label">备注</span>
+                                <span class="detail-info-value">-</span>
+                            </div>
+                        </div>
+                        <div class="detail-actions">
+                            <div class="detail-btn call" onclick="makeCall()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72"/>
+                                </svg>
+                                拨号
+                            </div>
+                            <div class="detail-btn" onclick="showPage('edit')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                                编辑
+                            </div>
+                            <div class="detail-btn delete" onclick="confirmDelete()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                                删除
+                            </div>
+                        </div>
+                    </div>
+                    <div class="phone-tabs-bottom">
+                        <div class="phone-tab" onclick="showPage('list')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                            </svg>
+                            <span>通讯录</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('favorites')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                            </svg>
+                            <span>收藏</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('recent')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            <span>最近</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('more')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="1"/>
+                                <circle cx="12" cy="5" r="1"/>
+                                <circle cx="12" cy="19" r="1"/>
+                            </svg>
+                            <span>更多</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phone 3: Add/Edit Contact -->
+        <div class="phone-mockup" id="phoneAddEdit" style="display: none;">
+            <div class="phone-screen">
+                <div class="phone-status-bar">
+                    <span class="status-bar-time">9:41</span>
+                </div>
+                <div class="page active">
+                    <div class="page-header" onclick="showPage('list')">
+                        <div class="back-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="15 18 9 12 15 6"/>
+                            </svg>
+                            返回
+                        </div>
+                    </div>
+                    <div class="form-content">
+                        <div class="add-avatar-picker" id="avatarPicker">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                                <circle cx="12" cy="13" r="4"/>
+                            </svg>
+                            点击添加照片
+                        </div>
+                        <div class="form-group">
+                            <label>姓名</label>
+                            <input type="text" id="inputName" placeholder="请输入姓名">
+                        </div>
+                        <div class="form-group">
+                            <label>电话</label>
+                            <input type="tel" id="inputPhone" placeholder="请输入电话号码">
+                        </div>
+                        <div class="form-group">
+                            <label>备注</label>
+                            <input type="text" placeholder="备注信息（可选）">
+                        </div>
+                        <p class="form-hint">* 姓名和头像至少填写一个</p>
+                    </div>
+                    <div class="form-actions" style="padding: 0 1.5rem 1rem;">
+                        <button class="btn btn-cancel" onclick="showPage('list')">取消</button>
+                        <button class="btn btn-save" onclick="saveContact()">保存</button>
+                    </div>
+                    <div class="phone-tabs-bottom">
+                        <div class="phone-tab" onclick="showPage('list')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                            </svg>
+                            <span>通讯录</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('favorites')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                            </svg>
+                            <span>收藏</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('recent')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            <span>最近</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('more')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="1"/>
+                                <circle cx="12" cy="5" r="1"/>
+                                <circle cx="12" cy="19" r="1"/>
+                            </svg>
+                            <span>更多</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phone 4: Import/Export -->
+        <div class="phone-mockup" id="phoneImportExport" style="display: none;">
+            <div class="phone-screen">
+                <div class="phone-status-bar">
+                    <span class="status-bar-time">9:41</span>
+                </div>
+                <div class="page active">
+                    <div class="page-header" onclick="showPage('more')">
+                        <div class="back-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="15 18 9 12 15 6"/>
+                            </svg>
+                            返回
+                        </div>
+                    </div>
+                    <div class="import-export-content">
+                        <div class="io-section">
+                            <h3>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                                从通讯录导入
+                            </h3>
+                            <p>将手机通讯录中的联系人导入到脸谱通讯录，自动同步头像</p>
+                            <button class="io-btn primary" onclick="importFromSystem()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                    <circle cx="9" cy="7" r="4"/>
+                                </svg>
+                                同步通讯录
+                            </button>
+                            <div class="sync-indicator">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                                上次同步：2026-04-15 10:30
+                            </div>
+                        </div>
+                        <div class="io-section">
+                            <h3>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="17 8 12 3 7 8"/>
+                                    <line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                                导出通讯录
+                            </h3>
+                            <p>导出为VCard文件，包含姓名、电话、头像等信息</p>
+                            <button class="io-btn" onclick="exportVCard()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                </svg>
+                                导出 VCard
+                            </button>
+                            <button class="io-btn" style="margin-top: 0.5rem;" onclick="exportCSV()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <line x1="8" y1="13" x2="16" y2="13"/>
+                                    <line x1="8" y1="17" x2="16" y2="17"/>
+                                </svg>
+                                导出 CSV
+                            </button>
+                        </div>
+                        <div class="io-section">
+                            <h3>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                                从文件导入
+                            </h3>
+                            <p>支持VCard和CSV格式文件导入</p>
+                            <button class="io-btn" onclick="importFromFile()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                                </svg>
+                                选择文件
+                            </button>
+                        </div>
+                    </div>
+                    <div class="phone-tabs-bottom">
+                        <div class="phone-tab" onclick="showPage('list')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                            </svg>
+                            <span>通讯录</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('favorites')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                            </svg>
+                            <span>收藏</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('recent')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            <span>最近</span>
+                        </div>
+                        <div class="phone-tab active" onclick="showPage('more')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="1"/>
+                                <circle cx="12" cy="5" r="1"/>
+                                <circle cx="12" cy="19" r="1"/>
+                            </svg>
+                            <span>更多</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phone 5: Favorites -->
+        <div class="phone-mockup" id="phoneFavorites" style="display: none;">
+            <div class="phone-screen">
+                <div class="phone-status-bar">
+                    <span class="status-bar-time">9:41</span>
+                </div>
+                <div class="page active">
+                    <div class="phone-content">
+                        <div class="contact-grid">
+                            <div class="contact-card" onclick="showDetail('张三', '138****8888')">
+                                <div class="contact-avatar">张</div>
+                                <span class="contact-name">张三</span>
+                            </div>
+                            <div class="contact-card" onclick="showDetail('李四', '139****6666')">
+                                <div class="contact-avatar" style="background: linear-gradient(135deg, #059669 0%, #34D399 100%);">李</div>
+                                <span class="contact-name">李四</span>
+                            </div>
+                            <div class="contact-card" onclick="showDetail('王五', '137****5555')">
+                                <div class="contact-avatar" style="background: linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%);">王</div>
+                                <span class="contact-name">王五</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="phone-tabs-bottom">
+                        <div class="phone-tab" onclick="showPage('list')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                            </svg>
+                            <span>通讯录</span>
+                        </div>
+                        <div class="phone-tab active" onclick="showPage('favorites')">
+                            <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                            </svg>
+                            <span>收藏</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('recent')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            <span>最近</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('more')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="1"/>
+                                <circle cx="12" cy="5" r="1"/>
+                                <circle cx="12" cy="19" r="1"/>
+                            </svg>
+                            <span>更多</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phone 6: Recent -->
+        <div class="phone-mockup" id="phoneRecent" style="display: none;">
+            <div class="phone-screen">
+                <div class="phone-status-bar">
+                    <span class="status-bar-time">9:41</span>
+                </div>
+                <div class="page active">
+                    <div class="phone-content">
+                        <div class="contact-grid">
+                            <div class="contact-card" onclick="showDetail('赵六', '136****4444')">
+                                <div class="contact-avatar" style="background: linear-gradient(135deg, #DC2626 0%, #F87171 100%);">赵</div>
+                                <span class="contact-name">赵六</span>
+                            </div>
+                            <div class="contact-card" onclick="showDetail('陈七', '135****3333')">
+                                <div class="contact-avatar" style="background: linear-gradient(135deg, #F59E0B 0%, #FCD34D 100%);">陈</div>
+                                <span class="contact-name">陈七</span>
+                            </div>
+                            <div class="contact-card" onclick="showDetail('杨八', '134****2222')">
+                                <div class="contact-avatar" style="background: linear-gradient(135deg, #EC4899 0%, #F472B6 100%);">杨</div>
+                                <span class="contact-name">杨八</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="phone-tabs-bottom">
+                        <div class="phone-tab" onclick="showPage('list')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                            </svg>
+                            <span>通讯录</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('favorites')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                            </svg>
+                            <span>收藏</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('recent')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            <span>最近</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('more')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="1"/>
+                                <circle cx="12" cy="5" r="1"/>
+                                <circle cx="12" cy="19" r="1"/>
+                            </svg>
+                            <span>更多</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phone 7: More -->
+        <div class="phone-mockup" id="phoneMore" style="display: none;">
+            <div class="phone-screen">
+                <div class="phone-status-bar">
+                    <span class="status-bar-time">9:41</span>
+                </div>
+                <div class="page active">
+                    <div class="form-content">
+                        <div class="io-section" onclick="showPage('importExport')">
+                            <h3>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                                导入导出
+                            </h3>
+                            <p>从通讯录导入或导出联系人</p>
+                        </div>
+                        <div class="io-section">
+                            <h3>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                                    <polyline points="22,6 12,13 2,6"/>
+                                </svg>
+                                头像来源设置
+                            </h3>
+                            <p>选择获取头像的方式</p>
+                        </div>
+                        <div class="io-section">
+                            <h3>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="4" y1="21" x2="4" y2="14"/>
+                                    <line x1="4" y1="10" x2="4" y2="3"/>
+                                    <line x1="12" y1="21" x2="12" y2="12"/>
+                                    <line x1="12" y1="8" x2="12" y2="3"/>
+                                    <line x1="20" y1="21" x2="20" y2="16"/>
+                                    <line x1="20" y1="12" x2="20" y2="3"/>
+                                    <line x1="1" y1="14" x2="7" y2="14"/>
+                                    <line x1="9" y1="8" x2="15" y2="8"/>
+                                    <line x1="17" y1="16" x2="23" y2="16"/>
+                                </svg>
+                                排序方式
+                            </h3>
+                            <p>按姓名 / 按添加时间 / 按最近联系</p>
+                        </div>
+                        <div class="io-section">
+                            <h3>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                                </svg>
+                                清除缓存
+                            </h3>
+                            <p>清除本地图片缓存</p>
+                        </div>
+                    </div>
+                    <div class="phone-tabs-bottom">
+                        <div class="phone-tab" onclick="showPage('list')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                            </svg>
+                            <span>通讯录</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('favorites')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                            </svg>
+                            <span>收藏</span>
+                        </div>
+                        <div class="phone-tab" onclick="showPage('recent')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            <span>最近</span>
+                        </div>
+                        <div class="phone-tab active" onclick="showPage('more')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="1"/>
+                                <circle cx="12" cy="5" r="1"/>
+                                <circle cx="12" cy="19" r="1"/>
+                            </svg>
+                            <span>更多</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <h2 class="section-title">功能模块</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="8" r="4"/>
+                        <path d="M4 20c0-4 4-6 8-6s8 2 8 6"/>
+                    </svg>
+                </div>
+                <h3>头像展示</h3>
+                <p>3列网格布局，头像占上方大部分区域，屏占比高，浏览效率提升50%</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon" style="background: var(--cta);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72"/>
+                    </svg>
+                </div>
+                <h3>一键拨号</h3>
+                <p>点击头像直接调起拨号，无需记忆号码，特别适合不识字用户</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon" style="background: #7C3AED;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                </div>
+                <h3>通讯录同步</h3>
+                <p>与系统通讯录双向同步，新建联系人自动同步到手机，来电显示头像</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon" style="background: #DC2626;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                </div>
+                <h3>导入功能</h3>
+                <p>从系统通讯录一键同步，也可从VCard/CSV文件批量导入</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon" style="background: #059669;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                </div>
+                <h3>导出功能</h3>
+                <p>支持VCard和CSV格式导出，包含姓名、电话、头像等信息</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon" style="background: #F59E0B;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    </svg>
+                </div>
+                <h3>收藏功能</h3>
+                <p>常用联系人可收藏到专属页面，更快找到最重要的人</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon" style="background: #EC4899;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                </div>
+                <h3>最近联系</h3>
+                <p>自动记录最近联系过的号码，方便回拨未接来电</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon" style="background: #06B6D4;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                </div>
+                <h3>编辑删除</h3>
+                <p>长按或进入详情页可编辑联系人信息，删除需二次确认</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p>脸谱通讯录设计方案 v2.0 | 2026-04-15</p>
+    </footer>
+
+    <script>
+        let currentPage = 'list';
+        let currentContact = null;
+        const phones = ['phoneList', 'phoneDetail', 'phoneAddEdit', 'phoneImportExport', 'phoneFavorites', 'phoneRecent', 'phoneMore'];
+
+        function hideAllPhones() {
+            phones.forEach(id => {
+                document.getElementById(id).style.display = 'none';
+            });
+        }
+
+        function showPage(page) {
+            hideAllPhones();
+            currentPage = page;
+
+            switch(page) {
+                case 'list':
+                    document.getElementById('phoneList').style.display = 'block';
+                    break;
+                case 'detail':
+                    document.getElementById('phoneDetail').style.display = 'block';
+                    break;
+                case 'add':
+                    document.getElementById('inputName').value = '';
+                    document.getElementById('inputPhone').value = '';
+                    document.getElementById('phoneAddEdit').style.display = 'block';
+                    break;
+                case 'edit':
+                    if (currentContact) {
+                        document.getElementById('inputName').value = currentContact.name;
+                        document.getElementById('inputPhone').value = currentContact.phone.replace('****', '****');
+                    }
+                    document.getElementById('phoneAddEdit').style.display = 'block';
+                    break;
+                case 'importExport':
+                    document.getElementById('phoneImportExport').style.display = 'block';
+                    break;
+                case 'favorites':
+                    document.getElementById('phoneFavorites').style.display = 'block';
+                    break;
+                case 'recent':
+                    document.getElementById('phoneRecent').style.display = 'block';
+                    break;
+                case 'more':
+                    document.getElementById('phoneMore').style.display = 'block';
+                    break;
+            }
+
+            updateTabStates(page);
+        }
+
+        function updateTabStates(page) {
+            document.querySelectorAll('.phone-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Note: This is simplified. In real app, each phone would have its own tabs.
+        }
+
+        function showDetail(name, phone) {
+            currentContact = { name, phone };
+            const initial = name.charAt(0);
+            document.getElementById('detailName').textContent = name;
+            document.getElementById('detailPhone').textContent = phone;
+            document.getElementById('detailPhoneFull').textContent = phone.replace('****', '1234');
+            document.getElementById('detailAvatar').textContent = initial;
+            showPage('detail');
+        }
+
+        function makeCall() {
+            alert('正在拨打电话：' + document.getElementById('detailPhoneFull').textContent);
+        }
+
+        function confirmDelete() {
+            if (confirm('确定要删除联系人 "' + currentContact.name + '" 吗？')) {
+                alert('联系人已删除');
+                showPage('list');
+            }
+        }
+
+        function saveContact() {
+            const name = document.getElementById('inputName').value;
+            const phone = document.getElementById('inputPhone').value;
+
+            if (!name && document.getElementById('avatarPicker').querySelector('svg')) {
+                alert('姓名和头像至少填写一个');
+                return;
+            }
+
+            alert('联系人已保存');
+            showPage('list');
+        }
+
+        function importFromSystem() {
+            alert('正在从系统通讯录导入...\n将同步所有联系人及其头像');
+        }
+
+        function exportVCard() {
+            alert('正在导出为VCard格式...\n文件将保存至Downloads目录');
+        }
+
+        function exportCSV() {
+            alert('正在导出为CSV格式...\n文件将保存至Downloads目录');
+        }
+
+        function importFromFile() {
+            alert('请选择VCard或CSV文件');
+        }
+
+        // Tab click handlers
+        document.querySelectorAll('.phone-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                const onclick = this.getAttribute('onclick');
+                if (onclick) {
+                    const page = onclick.match(/showPage\('(\w+)'\)/);
+                    if (page) {
+                        this.parentElement.querySelectorAll('.phone-tab').forEach(t => t.classList.remove('active'));
+                        this.classList.add('active');
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # 电话本
 
-电话本是一个原生 Android 通讯录应用，使用 Kotlin 和 Android View 实现，不依赖 Flutter 或跨平台框架。
+电话本是一个原生 Android 通讯录应用，使用 Kotlin、Jetpack Compose、Room 和 Coil 实现，不依赖 Flutter 或跨平台框架。
 
 ## 功能
 
@@ -17,7 +17,7 @@
   - 删除联系人前二次确认
 - 新增/编辑联系人：
   - 独立 Activity 页面
-  - 手机号必填
+  - 电话必填
   - 姓名和头像至少填写一个
 - 手机通讯录同步：
   - 从手机通讯录导入
@@ -31,12 +31,11 @@
 ## 构建
 
 ```powershell
-cd android
 .\gradlew.bat assembleDebug
 ```
 
 Debug APK 输出位置：
 
 ```text
-android/app/build/outputs/apk/debug/app-debug.apk
+app/build/outputs/apk/debug/app-debug.apk
 ```
