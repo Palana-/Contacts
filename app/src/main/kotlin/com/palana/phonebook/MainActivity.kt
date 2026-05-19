@@ -1,6 +1,7 @@
 package com.palana.phonebook
 
 import android.Manifest
+import android.content.ContentUris
 import android.content.ContentProviderOperation
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -1506,8 +1507,25 @@ class MainActivity : ComponentActivity() {
     private fun openSystemContactPhotoStream(systemContactId: Long?): InputStream? {
         if (systemContactId == null) return null
         val contactUri = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, systemContactId.toString())
-        return ContactsContract.Contacts.openContactPhotoInputStream(contentResolver, contactUri, true)
+        return openSystemDisplayPhotoStream(systemContactId)
+            ?: ContactsContract.Contacts.openContactPhotoInputStream(contentResolver, contactUri, true)
             ?: ContactsContract.Contacts.openContactPhotoInputStream(contentResolver, contactUri)
+    }
+
+    private fun openSystemDisplayPhotoStream(systemContactId: Long): InputStream? {
+        val projection = arrayOf(ContactsContract.Contacts.PHOTO_FILE_ID)
+        val contactUri = ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, systemContactId)
+        return try {
+            contentResolver.query(contactUri, projection, null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return null
+                val photoFileId = cursor.getLong(cursor.getColumnIndexOrThrow(ContactsContract.Contacts.PHOTO_FILE_ID))
+                if (photoFileId <= 0L) return null
+                val displayPhotoUri = ContentUris.withAppendedId(ContactsContract.DisplayPhoto.CONTENT_URI, photoFileId)
+                contentResolver.openAssetFileDescriptor(displayPhotoUri, "r")?.createInputStream()
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
