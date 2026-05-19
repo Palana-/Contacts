@@ -727,6 +727,17 @@ class MainActivity : ComponentActivity() {
         for ((phoneKey, systemContacts) in systemByPhone) {
             if (phoneKey in deletedPhoneKeys) continue
             val systemContact = systemContacts.maxWithOrNull(compareBy<SystemContactSnapshot> { it.score() }.thenBy { it.rawContactId }) ?: continue
+            val duplicateRawContactIds = systemContacts
+                .filter { it.rawContactId != systemContact.rawContactId }
+                .map { it.rawContactId }
+                .distinct()
+            if (duplicateRawContactIds.isNotEmpty()) {
+                val deleted = deleteRawContactsByIds(duplicateRawContactIds)
+                if (deleted > 0) {
+                    systemDeleted += deleted
+                    details.add(PhoneSyncDetail("系统删除重复联系人", systemContact.name, phoneKey, systemContact.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.CONTACT, PhoneSyncTarget.SYSTEM))
+                }
+            }
             val appContact = appByPhone[phoneKey]
             if (appContact == null) {
                 val id = UUID.randomUUID().toString()
@@ -766,7 +777,8 @@ class MainActivity : ComponentActivity() {
             var nameUpdated = false
             var oldSystemName: String? = null
             var avatarChanged = false
-            for (candidate in systemContacts) {
+            val contactsToSync = listOf(systemContact)
+            for (candidate in contactsToSync) {
                 val normalizedSystemPhone = normalizePhone(candidate.phoneNumber)
                 if (normalizedAppPhone.isNotEmpty() && (normalizedSystemPhone != normalizedAppPhone || candidate.phoneNumber != normalizedAppPhone)) {
                     if (updateSystemContactPhone(candidate.rawContactId, normalizedAppPhone)) phoneChanged = true
@@ -1099,6 +1111,10 @@ class MainActivity : ComponentActivity() {
 
     private fun deleteRawContactsByPhoneKey(phoneKey: String): Int {
         val rawContactIds = findRawContactIdsByPhoneKey(phoneKey).distinct()
+        return deleteRawContactsByIds(rawContactIds)
+    }
+
+    private fun deleteRawContactsByIds(rawContactIds: List<Long>): Int {
         var deleted = 0
         rawContactIds.chunked(50).forEach { batch ->
             val placeholders = batch.joinToString(",") { "?" }
