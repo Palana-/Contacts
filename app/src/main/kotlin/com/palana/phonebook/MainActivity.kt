@@ -724,8 +724,9 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        for ((phoneKey, systemContact) in systemByPhone) {
+        for ((phoneKey, systemContacts) in systemByPhone) {
             if (phoneKey in deletedPhoneKeys) continue
+            val systemContact = systemContacts.maxWithOrNull(compareBy<SystemContactSnapshot> { it.score() }.thenBy { it.rawContactId }) ?: continue
             val appContact = appByPhone[phoneKey]
             if (appContact == null) {
                 val id = UUID.randomUUID().toString()
@@ -759,32 +760,53 @@ class MainActivity : ComponentActivity() {
             }
             if (updatedApp != appContact) replaceAppContact(appContact, updatedApp)
 
-            val normalizedSystemPhone = normalizePhone(systemContact.phoneNumber)
             val normalizedAppPhone = normalizePhone(updatedApp.phone)
-            if (normalizedAppPhone.isNotEmpty() && (normalizedSystemPhone != normalizedAppPhone || systemContact.phoneNumber != normalizedAppPhone)) {
-                if (updateSystemContactPhone(systemContact.rawContactId, normalizedAppPhone)) {
-                    systemUpdated++
-                    details.add(PhoneSyncDetail("系统更新号码", updatedApp.name, normalizedAppPhone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.PHONE))
+            var phoneChanged = false
+            var nameSupplemented = false
+            var nameUpdated = false
+            var oldSystemName: String? = null
+            var avatarChanged = false
+            for (candidate in systemContacts) {
+                val normalizedSystemPhone = normalizePhone(candidate.phoneNumber)
+                if (normalizedAppPhone.isNotEmpty() && (normalizedSystemPhone != normalizedAppPhone || candidate.phoneNumber != normalizedAppPhone)) {
+                    if (updateSystemContactPhone(candidate.rawContactId, normalizedAppPhone)) phoneChanged = true
+                }
+
+                val candidateNameIsPlaceholder = isPlaceholderNameForPhone(candidate.name, updatedApp.phone)
+                if ((candidate.name.isBlank() || candidateNameIsPlaceholder) && updatedApp.name.isNotBlank()) {
+                    if (updateSystemContactName(candidate.rawContactId, updatedApp.name)) {
+                        if (candidateNameIsPlaceholder) {
+                            nameUpdated = true
+                            oldSystemName = oldSystemName ?: candidate.name
+                        } else {
+                            nameSupplemented = true
+                        }
+                    }
+                } else if (candidate.name.isNotBlank() && updatedApp.name.isNotBlank() && candidate.name != updatedApp.name && !isPlaceholderNameForPhone(updatedApp.name, updatedApp.phone)) {
+                    if (updateSystemContactName(candidate.rawContactId, updatedApp.name)) {
+                        nameUpdated = true
+                        oldSystemName = oldSystemName ?: candidate.name
+                    }
+                }
+
+                if (findPhotoDataId(candidate.rawContactId) == null && !updatedApp.avatarUri.isNullOrBlank()) {
+                    if (upsertSystemContactPhoto(candidate.rawContactId, updatedApp.avatarUri)) avatarChanged = true
                 }
             }
-
-            if ((systemContact.name.isBlank() || systemNameIsPlaceholder) && updatedApp.name.isNotBlank()) {
-                if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
-                    systemUpdated++
-                    details.add(PhoneSyncDetail(if (systemNameIsPlaceholder) "系统更新姓名" else "系统补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, if (systemNameIsPlaceholder) PhoneSyncTone.UPDATE else PhoneSyncTone.ADD, PhoneSyncField.NAME, PhoneSyncTarget.SYSTEM, if (systemNameIsPlaceholder) systemContact.name else null))
-                }
-            } else if (systemContact.name.isNotBlank() && updatedApp.name.isNotBlank() && systemContact.name != updatedApp.name && (systemNameIsPlaceholder || !isPlaceholderNameForPhone(updatedApp.name, updatedApp.phone))) {
-                if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
-                    systemUpdated++
-                    details.add(PhoneSyncDetail("系统更新姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.NAME, PhoneSyncTarget.SYSTEM, systemContact.name))
-                }
+            if (phoneChanged) {
+                systemUpdated++
+                details.add(PhoneSyncDetail("系统更新号码", updatedApp.name, normalizedAppPhone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.PHONE))
             }
-
-            if (findPhotoDataId(systemContact.rawContactId) == null && !updatedApp.avatarUri.isNullOrBlank()) {
-                if (upsertSystemContactPhoto(systemContact.rawContactId, updatedApp.avatarUri)) {
-                    systemUpdated++
-                    details.add(PhoneSyncDetail("系统补头像", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.AVATAR))
-                }
+            if (nameUpdated) {
+                systemUpdated++
+                details.add(PhoneSyncDetail("系统更新姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.NAME, PhoneSyncTarget.SYSTEM, oldSystemName))
+            } else if (nameSupplemented) {
+                systemUpdated++
+                details.add(PhoneSyncDetail("系统补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.NAME))
+            }
+            if (avatarChanged) {
+                systemUpdated++
+                details.add(PhoneSyncDetail("系统补头像", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.AVATAR))
             }
         }
 
@@ -1109,8 +1131,8 @@ class MainActivity : ComponentActivity() {
         return PhoneContactsDeleteResult(count, details)
     }
 
-    private fun loadSystemContactSnapshots(): Map<String, SystemContactSnapshot> {
-        val snapshots = linkedMapOf<String, SystemContactSnapshot>()
+    private fun loadSystemContactSnapshots(): Map<String, List<SystemContactSnapshot>> {
+        val snapshots = linkedMapOf<String, MutableList<SystemContactSnapshot>>()
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
             ContactsContract.CommonDataKinds.Phone.RAW_CONTACT_ID,
@@ -1142,8 +1164,7 @@ class MainActivity : ComponentActivity() {
                     rawContactId = rawContactId,
                     contactId = cursor.getLong(contactIdIndex)
                 )
-                val existing = snapshots[phoneKey]
-                if (existing == null || snapshot.score() > existing.score()) snapshots[phoneKey] = snapshot
+                snapshots.getOrPut(phoneKey) { mutableListOf() }.add(snapshot)
             }
         }
         return snapshots
