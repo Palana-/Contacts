@@ -2,6 +2,7 @@ package com.palana.phonebook
 
 import android.os.Bundle
 import android.content.Intent
+import android.net.Uri
 import android.view.Window
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -23,10 +24,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,10 +57,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.lifecycle.lifecycleScope
+import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
 import com.palana.phonebook.data.AvatarStorage
 import com.palana.phonebook.data.ContactRepository
+import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -74,11 +79,35 @@ class EditContactActivity : ComponentActivity() {
     private var name by mutableStateOf("")
     private var phone by mutableStateOf("")
     private var avatarUri by mutableStateOf<String?>(null)
+    private var showAvatarSourceDialog by mutableStateOf(false)
+    private var pendingCameraUri: Uri? = null
+    private var pendingCameraFile: File? = null
 
     private val pickAvatarLauncher = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         lifecycleScope.launch {
-            val localUri = withContext(Dispatchers.IO) { avatarStorage.copyPickedAvatar(uri?.toString()) }
+            val localUri = withContext(Dispatchers.IO) { avatarStorage.copyOptimizedAvatar(uri?.toString()) }
             if (uri != null && localUri == null) {
+                toast("头像读取失败")
+            } else if (localUri != null) {
+                avatarUri = localUri
+            }
+        }
+    }
+
+    private val takeAvatarLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val capturedUri = pendingCameraUri
+        lifecycleScope.launch {
+            val localUri = if (success && capturedUri != null) {
+                withContext(Dispatchers.IO) {
+                    avatarStorage.copyOptimizedAvatar(capturedUri.toString(), "camera_avatar")
+                }
+            } else {
+                null
+            }
+            withContext(Dispatchers.IO) { pendingCameraFile?.delete() }
+            pendingCameraUri = null
+            pendingCameraFile = null
+            if (success && localUri == null) {
                 toast("头像读取失败")
             } else if (localUri != null) {
                 avatarUri = localUri
@@ -137,6 +166,9 @@ class EditContactActivity : ComponentActivity() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 AvatarPicker()
+                if (showAvatarSourceDialog) {
+                    AvatarSourceDialog()
+                }
                 Spacer(Modifier.height(22.dp))
                 OutlinedTextField(
                     value = name,
@@ -209,9 +241,7 @@ class EditContactActivity : ComponentActivity() {
                 .clip(RoundedCornerShape(24.dp))
                 .background(Color.White)
                 .clickable {
-                    pickAvatarLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
+                    showAvatarSourceDialog = true
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -235,6 +265,50 @@ class EditContactActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    @Composable
+    private fun AvatarSourceDialog() {
+        AlertDialog(
+            onDismissRequest = { showAvatarSourceDialog = false },
+            title = { Text("设置头像", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Button(
+                        onClick = {
+                            showAvatarSourceDialog = false
+                            launchCameraPicker()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Brand),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(Icons.Default.CameraAlt, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("拍照", fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            showAvatarSourceDialog = false
+                            launchGalleryPicker()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE0F2F1), contentColor = Brand),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(Icons.Default.Photo, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("从相册选择", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            confirmButton = {}
+        )
     }
 
     @Composable
@@ -297,6 +371,25 @@ class EditContactActivity : ComponentActivity() {
             )
             finish()
         }
+    }
+
+    private fun launchGalleryPicker() {
+        pickAvatarLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
+
+    private fun launchCameraPicker() {
+        val file = createCameraAvatarFile()
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        pendingCameraFile = file
+        pendingCameraUri = uri
+        takeAvatarLauncher.launch(uri)
+    }
+
+    private fun createCameraAvatarFile(): File {
+        val dir = File(cacheDir, "camera").apply { mkdirs() }
+        return File.createTempFile("avatar_camera_", ".jpg", dir)
     }
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
