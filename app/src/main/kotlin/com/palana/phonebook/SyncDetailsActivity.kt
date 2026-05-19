@@ -81,20 +81,21 @@ class SyncDetailsActivity : ComponentActivity() {
 
     @Composable
     private fun SyncDetailRow(detail: SyncDetail) {
-        val toneColor = detail.toneColor()
         Card(
-            modifier = Modifier.fillMaxWidth().border(1.dp, toneColor.copy(alpha = 0.55f), RoundedCornerShape(12.dp)),
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
             Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-                Text(detail.title(), color = toneColor, fontWeight = FontWeight.ExtraBold)
+                Text(detail.title(), color = TitleColor, fontWeight = FontWeight.ExtraBold)
                 Spacer(Modifier.height(8.dp))
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     if (!detail.avatarUri.isNullOrBlank()) {
                         Box(
                             modifier = Modifier
                                 .size(54.dp)
+                                .avatarChangeBorder(detail)
+                                .padding(if (detail.isAvatarChanged()) 1.dp else 0.dp)
                                 .clip(RoundedCornerShape(10.dp)),
                             contentAlignment = Alignment.Center
                         ) {
@@ -111,12 +112,20 @@ class SyncDetailsActivity : ComponentActivity() {
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         if (detail.shouldShowName()) {
-                            Text(detail.name, color = TextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(detail.name, color = detail.fieldColor(PhoneSyncField.NAME), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        Text(groupedPhoneNumber(detail.phone), color = TextColor, maxLines = 1)
+                        Text(groupedPhoneNumber(detail.phone), color = detail.fieldColor(PhoneSyncField.PHONE), maxLines = 1)
                     }
                 }
             }
+        }
+    }
+
+    private fun Modifier.avatarChangeBorder(detail: SyncDetail): Modifier {
+        return if (detail.isAvatarChanged()) {
+            border(1.dp, detail.toneColor(), RoundedCornerShape(11.dp))
+        } else {
+            this
         }
     }
 
@@ -147,7 +156,8 @@ class SyncDetailsActivity : ComponentActivity() {
                     name = item.optString("name"),
                     phone = item.optString("phone"),
                     avatarUri = item.optString("avatarUri").ifBlank { null },
-                    tone = item.optString("tone", PhoneSyncTone.ADD)
+                    tone = item.optString("tone", PhoneSyncTone.ADD),
+                    field = item.optString("field", PhoneSyncField.CONTACT)
                 )
             }
         }.getOrDefault(emptyList())
@@ -158,16 +168,22 @@ class SyncDetailsActivity : ComponentActivity() {
         val name: String,
         val phone: String,
         val avatarUri: String?,
-        val tone: String
+        val tone: String,
+        val field: String
     ) {
         fun title(): String = type.replaceFirst("APP", "APP-").replaceFirst("系统", "系统-")
         fun shouldShowName(): Boolean = name.isNotBlank() && name != phone
         fun toneColor(): Color = if (tone == PhoneSyncTone.UPDATE) DangerColor else Brand
+        fun isAvatarChanged(): Boolean = field == PhoneSyncField.AVATAR || field == PhoneSyncField.CONTACT
+        fun fieldColor(targetField: String): Color {
+            return if (field == targetField || field == PhoneSyncField.CONTACT) toneColor() else TextColor
+        }
     }
 
     companion object {
         const val EXTRA_DETAILS = "details"
         private val Brand = Color(0xFF0891B2)
+        private val TitleColor = Color(0xFF334155)
         private val DangerColor = Color(0xFFDC2626)
         private val TextColor = Color(0xFF0F172A)
         private val SurfaceColor = Color(0xFFF8FAFC)

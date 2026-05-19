@@ -715,7 +715,7 @@ class MainActivity : ComponentActivity() {
                 val deleted = deleteRawContactsByPhoneKey(phoneKey)
                 if (deleted > 0) {
                     systemDeleted += deleted
-                    details.add(PhoneSyncDetail("系统删除联系人", "", phoneKey, null, PhoneSyncTone.UPDATE))
+                    details.add(PhoneSyncDetail("系统删除联系人", "", phoneKey, null, PhoneSyncTone.UPDATE, PhoneSyncField.CONTACT))
                 }
             }
         }
@@ -735,7 +735,7 @@ class MainActivity : ComponentActivity() {
                 appByPhone[phoneKey] = contact
                 appChanged = true
                 imported++
-                details.add(PhoneSyncDetail("APP导入联系人", contact.name, contact.phone, contact.avatarUri, PhoneSyncTone.ADD))
+                details.add(PhoneSyncDetail("APP导入联系人", contact.name, contact.phone, contact.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.CONTACT))
                 continue
             }
 
@@ -743,13 +743,13 @@ class MainActivity : ComponentActivity() {
             if (updatedApp.name.isBlank() && systemContact.name.isNotBlank()) {
                 updatedApp = updatedApp.copy(name = systemContact.name)
                 appNameUpdated++
-                details.add(PhoneSyncDetail("APP补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD))
+                details.add(PhoneSyncDetail("APP补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.NAME))
             }
             if (updatedApp.avatarUri == null && !systemContact.avatarUri.isNullOrBlank()) {
                 val localAvatar = copyAvatarToPrivateFile(systemContact.avatarUri, updatedApp.id, systemContact.contactId) ?: systemContact.avatarUri
                 updatedApp = updatedApp.copy(avatarUri = localAvatar)
                 appAvatarUpdated++
-                details.add(PhoneSyncDetail("APP补头像", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD))
+                details.add(PhoneSyncDetail("APP补头像", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.AVATAR))
             }
             if (updatedApp != appContact) replaceAppContact(appContact, updatedApp)
 
@@ -758,26 +758,26 @@ class MainActivity : ComponentActivity() {
             if (normalizedAppPhone.isNotEmpty() && (normalizedSystemPhone != normalizedAppPhone || systemContact.phoneNumber != normalizedAppPhone)) {
                 if (updateSystemContactPhone(systemContact.rawContactId, normalizedAppPhone)) {
                     systemUpdated++
-                    details.add(PhoneSyncDetail("系统更新号码", updatedApp.name, normalizedAppPhone, updatedApp.avatarUri, PhoneSyncTone.UPDATE))
+                    details.add(PhoneSyncDetail("系统更新号码", updatedApp.name, normalizedAppPhone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.PHONE))
                 }
             }
 
             if (systemContact.name.isBlank() && updatedApp.name.isNotBlank()) {
                 if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
                     systemUpdated++
-                    details.add(PhoneSyncDetail("系统补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD))
+                    details.add(PhoneSyncDetail("系统补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.NAME))
                 }
             } else if (systemContact.name.isNotBlank() && updatedApp.name.isNotBlank() && systemContact.name != updatedApp.name) {
                 if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
                     systemUpdated++
-                    details.add(PhoneSyncDetail("系统更新姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.UPDATE))
+                    details.add(PhoneSyncDetail("系统更新姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.NAME))
                 }
             }
 
             if (systemContact.avatarUri.isNullOrBlank() && !updatedApp.avatarUri.isNullOrBlank()) {
                 if (upsertSystemContactPhoto(systemContact.rawContactId, updatedApp.avatarUri)) {
                     systemUpdated++
-                    details.add(PhoneSyncDetail("系统补头像", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD))
+                    details.add(PhoneSyncDetail("系统补头像", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.AVATAR))
                 }
             }
         }
@@ -787,11 +787,11 @@ class MainActivity : ComponentActivity() {
             when (writeContactToPhone(appContact).result) {
                 PhoneWriteResult.INSERTED -> {
                     systemInserted++
-                    details.add(PhoneSyncDetail("系统写入联系人", appContact.name, appContact.phone, appContact.avatarUri, PhoneSyncTone.ADD))
+                    details.add(PhoneSyncDetail("系统写入联系人", appContact.name, appContact.phone, appContact.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.CONTACT))
                 }
                 PhoneWriteResult.UPDATED -> {
                     systemUpdated++
-                    details.add(PhoneSyncDetail("系统更新联系人", appContact.name, appContact.phone, appContact.avatarUri, PhoneSyncTone.UPDATE))
+                    details.add(PhoneSyncDetail("系统更新联系人", appContact.name, appContact.phone, appContact.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.CONTACT))
                 }
                 PhoneWriteResult.NO_CHANGE,
                 PhoneWriteResult.FAILED -> Unit
@@ -818,8 +818,20 @@ class MainActivity : ComponentActivity() {
                 val contact = repository.getContact(contactId) ?: return@withContext
                 val oldKey = normalizePhone(originalPhone)
                 val newKey = normalizePhone(contact.phone)
-                if (oldKey.isNotEmpty() && oldKey != newKey) deleteRawContactsByPhoneKey(oldKey)
-                writeContactToPhone(contact)
+                if (oldKey.isNotEmpty() && oldKey != newKey) {
+                    val rawContactId = findRawContactIdsByPhoneKey(oldKey).firstOrNull()
+                    if (rawContactId != null) {
+                        updateSystemContactPhone(rawContactId, newKey)
+                        updateSystemContactName(rawContactId, contact.name)
+                        if (contact.avatarUri != null && findPhotoDataId(rawContactId) == null) {
+                            upsertSystemContactPhoto(rawContactId, contact.avatarUri)
+                        }
+                    } else {
+                        writeContactToPhone(contact)
+                    }
+                } else {
+                    writeContactToPhone(contact)
+                }
             }
         }
     }
@@ -1459,6 +1471,7 @@ private data class PhoneSyncSummary(
                     .put("phone", detail.phone)
                     .put("avatarUri", detail.avatarUri.orEmpty())
                     .put("tone", detail.tone)
+                    .put("field", detail.field)
             )
         }
         return array.toString()
@@ -1501,12 +1514,20 @@ data class PhoneSyncDetail(
     val name: String,
     val phone: String,
     val avatarUri: String?,
-    val tone: String = PhoneSyncTone.ADD
+    val tone: String = PhoneSyncTone.ADD,
+    val field: String = PhoneSyncField.CONTACT
 )
 
 object PhoneSyncTone {
     const val ADD = "add"
     const val UPDATE = "update"
+}
+
+object PhoneSyncField {
+    const val CONTACT = "contact"
+    const val NAME = "name"
+    const val PHONE = "phone"
+    const val AVATAR = "avatar"
 }
 
 private data class PhoneWriteOutcome(
