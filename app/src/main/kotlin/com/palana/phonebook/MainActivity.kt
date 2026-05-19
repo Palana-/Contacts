@@ -1016,7 +1016,23 @@ class MainActivity : ComponentActivity() {
                     .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, name)
                     .build()
             )
-            contentResolver.applyBatch(ContactsContract.AUTHORITY, operations).sumOf { it.count ?: 0 } > 0
+            val updated = contentResolver.applyBatch(ContactsContract.AUTHORITY, operations).sumOf { it.count ?: 0 }
+            updated > 0 || insertSystemContactName(rawContactId, name)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun insertSystemContactName(rawContactId: Long, name: String): Boolean {
+        return try {
+            val operations = arrayListOf(
+                ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                    .withValue(ContactsContract.Data.RAW_CONTACT_ID, rawContactId)
+                    .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
+                    .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, name)
+                    .build()
+            )
+            contentResolver.applyBatch(ContactsContract.AUTHORITY, operations).isNotEmpty()
         } catch (_: Exception) {
             false
         }
@@ -1111,19 +1127,19 @@ class MainActivity : ComponentActivity() {
         )?.use { cursor ->
             val contactIdIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
             val rawIdIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.RAW_CONTACT_ID)
-            val nameIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
             val phoneIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
             val photoIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.PHOTO_URI)
             while (cursor.moveToNext()) {
                 val phone = cursor.getString(phoneIndex)?.trim().orEmpty()
                 val phoneKey = normalizePhone(phone)
                 if (phoneKey.isEmpty()) continue
+                val rawContactId = cursor.getLong(rawIdIndex)
                 val snapshot = SystemContactSnapshot(
                     phoneKey = phoneKey,
                     phoneNumber = phone,
-                    name = cursor.getString(nameIndex)?.trim().orEmpty(),
+                    name = findSystemContactName(rawContactId)?.trim().orEmpty(),
                     avatarUri = cursor.getString(photoIndex),
-                    rawContactId = cursor.getLong(rawIdIndex),
+                    rawContactId = rawContactId,
                     contactId = cursor.getLong(contactIdIndex)
                 )
                 val existing = snapshots[phoneKey]
