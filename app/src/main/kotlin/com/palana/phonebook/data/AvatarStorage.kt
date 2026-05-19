@@ -15,15 +15,30 @@ class AvatarStorage(private val context: Context) {
     fun copyPickedAvatar(sourcePath: String?): String? {
         if (sourcePath.isNullOrBlank()) return null
         return try {
-            val bitmap = decodeAvatarBitmap(sourcePath) ?: return null
-            val file = File(avatarDir(), "avatar_${System.currentTimeMillis()}.jpg")
-            FileOutputStream(file).use { output ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, AVATAR_JPEG_QUALITY, output)
-            }
-            bitmap.recycle()
-            Uri.fromFile(file).toString()
+            saveOptimizedAvatar(decodeAvatarBitmap(sourcePath), "avatar")
         } catch (_: Exception) {
             null
+        }
+    }
+
+    fun copyOptimizedAvatar(sourcePath: String?, filePrefix: String = "avatar"): String? {
+        if (sourcePath.isNullOrBlank()) return null
+        return try {
+            saveOptimizedAvatar(decodeAvatarBitmap(sourcePath), filePrefix)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun copyOptimizedAvatar(input: InputStream, filePrefix: String = "avatar"): String? {
+        val tempFile = File.createTempFile("avatar_source_", ".tmp", context.cacheDir)
+        return try {
+            FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+            saveOptimizedAvatar(decodeAvatarBitmap(tempFile.absolutePath), filePrefix)
+        } catch (_: Exception) {
+            null
+        } finally {
+            tempFile.delete()
         }
     }
 
@@ -52,6 +67,17 @@ class AvatarStorage(private val context: Context) {
     }
 
     fun avatarDir(): File = File(context.filesDir, "avatars").apply { mkdirs() }
+
+    private fun saveOptimizedAvatar(bitmap: Bitmap?, filePrefix: String): String? {
+        bitmap ?: return null
+        val safePrefix = filePrefix.replace(Regex("[^A-Za-z0-9_-]"), "_").ifBlank { "avatar" }
+        val file = File(avatarDir(), "${safePrefix}_${System.currentTimeMillis()}.jpg")
+        FileOutputStream(file).use { output ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, AVATAR_JPEG_QUALITY, output)
+        }
+        bitmap.recycle()
+        return Uri.fromFile(file).toString()
+    }
 
     private fun decodeAvatarBitmap(sourcePath: String): Bitmap? {
         val uri = Uri.parse(sourcePath)

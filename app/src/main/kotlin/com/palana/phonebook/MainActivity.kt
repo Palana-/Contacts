@@ -1486,19 +1486,10 @@ class MainActivity : ComponentActivity() {
 
     private fun copyAvatarToPrivateFile(sourceUri: String?, contactId: String, systemContactId: Long? = null): String? {
         return try {
-            val rawFile = File(avatarStorage.avatarDir(), "$contactId.${sourceUri?.let { avatarStorage.avatarExtension(it) } ?: "jpg"}")
-            val copiedRaw = if (!sourceUri.isNullOrBlank()) {
-                openAvatarInputStream(sourceUri)?.use { input -> FileOutputStream(rawFile).use { output -> input.copyTo(output) }; true } == true
-            } else {
-                false
-            }
-            if (copiedRaw) return Uri.fromFile(rawFile).toString()
-            val photoFile = File(avatarStorage.avatarDir(), "$contactId.jpg")
             openSystemContactPhotoStream(systemContactId)?.use { input ->
-                FileOutputStream(photoFile).use { output -> input.copyTo(output) }
-                return Uri.fromFile(photoFile).toString()
+                avatarStorage.copyOptimizedAvatar(input, contactId)?.let { return it }
             }
-            null
+            avatarStorage.copyOptimizedAvatar(sourceUri, contactId)
         } catch (_: Exception) {
             null
         }
