@@ -763,10 +763,11 @@ class MainActivity : ComponentActivity() {
             }
 
             if (systemContact.name.isBlank() && updatedApp.name.isNotBlank()) {
-                if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
-                    systemUpdated++
-                    details.add(PhoneSyncDetail("系统补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.NAME))
-                }
+                val nameRemovedApp = updatedApp.copy(name = "")
+                replaceAppContact(updatedApp, nameRemovedApp)
+                updatedApp = nameRemovedApp
+                appNameUpdated++
+                details.add(PhoneSyncDetail("系统删除姓名", "", updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.NAME, PhoneSyncTarget.SYSTEM))
             } else if (systemContact.name.isNotBlank() && updatedApp.name.isNotBlank() && systemContact.name != updatedApp.name) {
                 if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
                     systemUpdated++
@@ -1001,13 +1002,30 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun updateSystemContactName(rawContactId: Long, name: String): Boolean {
-        if (name.isBlank()) return false
+        if (name.isBlank()) return deleteSystemContactName(rawContactId)
         if (findSystemContactName(rawContactId) == name) return false
         return try {
             val operations = arrayListOf(
                 ContentProviderOperation.newUpdate(ContactsContract.Data.CONTENT_URI)
                     .withSelection("${ContactsContract.Data.RAW_CONTACT_ID}=? AND ${ContactsContract.Data.MIMETYPE}=?", arrayOf(rawContactId.toString(), ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE))
                     .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, name)
+                    .build()
+            )
+            contentResolver.applyBatch(ContactsContract.AUTHORITY, operations).sumOf { it.count ?: 0 } > 0
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun deleteSystemContactName(rawContactId: Long): Boolean {
+        if (findSystemContactName(rawContactId).isNullOrBlank()) return false
+        return try {
+            val operations = arrayListOf(
+                ContentProviderOperation.newUpdate(ContactsContract.Data.CONTENT_URI)
+                    .withSelection("${ContactsContract.Data.RAW_CONTACT_ID}=? AND ${ContactsContract.Data.MIMETYPE}=?", arrayOf(rawContactId.toString(), ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE))
+                    .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, "")
+                    .withValue(ContactsContract.CommonDataKinds.StructuredName.GIVEN_NAME, "")
+                    .withValue(ContactsContract.CommonDataKinds.StructuredName.FAMILY_NAME, "")
                     .build()
             )
             contentResolver.applyBatch(ContactsContract.AUTHORITY, operations).sumOf { it.count ?: 0 } > 0
@@ -1463,7 +1481,7 @@ private data class PhoneSyncSummary(
 
     fun detailsJson(): String {
         val array = JSONArray()
-        details.forEach { detail ->
+        sortedDetails().forEach { detail ->
             array.put(
                 JSONObject()
                     .put("type", detail.type)
@@ -1472,9 +1490,14 @@ private data class PhoneSyncSummary(
                     .put("avatarUri", detail.avatarUri.orEmpty())
                     .put("tone", detail.tone)
                     .put("field", detail.field)
+                    .put("target", detail.target)
             )
         }
         return array.toString()
+    }
+
+    private fun sortedDetails(): List<PhoneSyncDetail> {
+        return details.sortedWith(compareBy<PhoneSyncDetail> { if (it.target == PhoneSyncTarget.SYSTEM) 0 else 1 })
     }
 }
 
@@ -1515,7 +1538,8 @@ data class PhoneSyncDetail(
     val phone: String,
     val avatarUri: String?,
     val tone: String = PhoneSyncTone.ADD,
-    val field: String = PhoneSyncField.CONTACT
+    val field: String = PhoneSyncField.CONTACT,
+    val target: String = if (type.startsWith("APP")) PhoneSyncTarget.APP else PhoneSyncTarget.SYSTEM
 )
 
 object PhoneSyncTone {
@@ -1528,6 +1552,11 @@ object PhoneSyncField {
     const val NAME = "name"
     const val PHONE = "phone"
     const val AVATAR = "avatar"
+}
+
+object PhoneSyncTarget {
+    const val APP = "app"
+    const val SYSTEM = "system"
 }
 
 private data class PhoneWriteOutcome(

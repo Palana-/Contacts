@@ -157,9 +157,12 @@ class SyncDetailsActivity : ComponentActivity() {
                     phone = item.optString("phone"),
                     avatarUri = item.optString("avatarUri").ifBlank { null },
                     tone = item.optString("tone", PhoneSyncTone.ADD),
-                    field = item.optString("field", PhoneSyncField.CONTACT)
+                    field = item.optString("field", PhoneSyncField.CONTACT),
+                    target = item.optString("target").ifBlank {
+                        if (item.optString("type").startsWith("APP")) PhoneSyncTarget.APP else PhoneSyncTarget.SYSTEM
+                    }
                 )
-            }
+            }.sortedWith(compareBy<SyncDetail> { if (it.target == PhoneSyncTarget.SYSTEM) 0 else 1 })
         }.getOrDefault(emptyList())
     }
 
@@ -169,7 +172,8 @@ class SyncDetailsActivity : ComponentActivity() {
         val phone: String,
         val avatarUri: String?,
         val tone: String,
-        val field: String
+        val field: String,
+        val target: String
     ) {
         fun title(): String = type.replaceFirst("APP", "APP-").replaceFirst("系统", "系统-")
         fun shouldShowName(): Boolean = name.isNotBlank() && name != phone
