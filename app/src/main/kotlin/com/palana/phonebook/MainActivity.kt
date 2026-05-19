@@ -802,7 +802,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                if (findPhotoDataId(candidate.rawContactId) == null && !updatedApp.avatarUri.isNullOrBlank()) {
+                if (!candidate.hasPhoto && !updatedApp.avatarUri.isNullOrBlank()) {
                     if (upsertSystemContactPhoto(candidate.rawContactId, updatedApp.avatarUri)) avatarChanged = true
                 }
             }
@@ -1150,6 +1150,8 @@ class MainActivity : ComponentActivity() {
 
     private fun loadSystemContactSnapshots(): Map<String, List<SystemContactSnapshot>> {
         val snapshots = linkedMapOf<String, MutableList<SystemContactSnapshot>>()
+        val namesByRawContactId = loadSystemContactNames()
+        val rawContactIdsWithPhoto = loadSystemContactPhotoIds()
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
             ContactsContract.CommonDataKinds.Phone.RAW_CONTACT_ID,
@@ -1176,8 +1178,9 @@ class MainActivity : ComponentActivity() {
                 val snapshot = SystemContactSnapshot(
                     phoneKey = phoneKey,
                     phoneNumber = phone,
-                    name = findSystemContactName(rawContactId)?.trim().orEmpty(),
+                    name = namesByRawContactId[rawContactId].orEmpty(),
                     avatarUri = cursor.getString(photoIndex),
+                    hasPhoto = rawContactId in rawContactIdsWithPhoto,
                     rawContactId = rawContactId,
                     contactId = cursor.getLong(contactIdIndex)
                 )
@@ -1185,6 +1188,37 @@ class MainActivity : ComponentActivity() {
             }
         }
         return snapshots
+    }
+
+    private fun loadSystemContactNames(): Map<Long, String> {
+        val names = mutableMapOf<Long, String>()
+        val projection = arrayOf(
+            ContactsContract.Data.RAW_CONTACT_ID,
+            ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME
+        )
+        val selection = "${ContactsContract.Data.MIMETYPE}=?"
+        val args = arrayOf(ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
+        contentResolver.query(ContactsContract.Data.CONTENT_URI, projection, selection, args, null)?.use { cursor ->
+            val rawIdIndex = cursor.getColumnIndexOrThrow(ContactsContract.Data.RAW_CONTACT_ID)
+            val nameIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME)
+            while (cursor.moveToNext()) {
+                val name = cursor.getString(nameIndex)?.trim().orEmpty()
+                if (name.isNotEmpty()) names[cursor.getLong(rawIdIndex)] = name
+            }
+        }
+        return names
+    }
+
+    private fun loadSystemContactPhotoIds(): Set<Long> {
+        val rawIds = mutableSetOf<Long>()
+        val projection = arrayOf(ContactsContract.Data.RAW_CONTACT_ID)
+        val selection = "${ContactsContract.Data.MIMETYPE}=?"
+        val args = arrayOf(ContactsContract.CommonDataKinds.Photo.CONTENT_ITEM_TYPE)
+        contentResolver.query(ContactsContract.Data.CONTENT_URI, projection, selection, args, null)?.use { cursor ->
+            val rawIdIndex = cursor.getColumnIndexOrThrow(ContactsContract.Data.RAW_CONTACT_ID)
+            while (cursor.moveToNext()) rawIds.add(cursor.getLong(rawIdIndex))
+        }
+        return rawIds
     }
 
     private fun findRawContactIdByPhone(phone: String): Long? {
@@ -1572,10 +1606,11 @@ private data class SystemContactSnapshot(
     val phoneNumber: String,
     val name: String,
     val avatarUri: String?,
+    val hasPhoto: Boolean,
     val rawContactId: Long,
     val contactId: Long
 ) {
-    fun score(): Int = (if (name.isNotBlank()) 1 else 0) + (if (!avatarUri.isNullOrBlank()) 2 else 0)
+    fun score(): Int = (if (name.isNotBlank()) 1 else 0) + (if (hasPhoto) 2 else 0)
 }
 
 private data class PhoneContactsImportResult(
