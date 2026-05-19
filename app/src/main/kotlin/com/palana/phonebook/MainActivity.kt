@@ -744,10 +744,11 @@ class MainActivity : ComponentActivity() {
             }
 
             var updatedApp = appContact
-            if (updatedApp.name.isBlank() && systemContact.name.isNotBlank()) {
+            val appNameIsPlaceholder = isPlaceholderNameForPhone(updatedApp.name, updatedApp.phone)
+            if ((updatedApp.name.isBlank() || appNameIsPlaceholder) && systemContact.name.isNotBlank()) {
                 updatedApp = updatedApp.copy(name = systemContact.name)
                 appNameUpdated++
-                details.add(PhoneSyncDetail("APP补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.NAME))
+                details.add(PhoneSyncDetail(if (appNameIsPlaceholder) "APP更新姓名" else "APP补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, if (appNameIsPlaceholder) PhoneSyncTone.UPDATE else PhoneSyncTone.ADD, PhoneSyncField.NAME, PhoneSyncTarget.APP))
             }
             if (updatedApp.avatarUri == null && !systemContact.avatarUri.isNullOrBlank()) {
                 val localAvatar = copyAvatarToPrivateFile(systemContact.avatarUri, updatedApp.id, systemContact.contactId) ?: systemContact.avatarUri
@@ -772,7 +773,7 @@ class MainActivity : ComponentActivity() {
                 updatedApp = nameRemovedApp
                 appNameUpdated++
                 details.add(PhoneSyncDetail("系统删除姓名", "", updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.NAME, PhoneSyncTarget.SYSTEM))
-            } else if (systemContact.name.isNotBlank() && updatedApp.name.isNotBlank() && systemContact.name != updatedApp.name) {
+            } else if (systemContact.name.isNotBlank() && updatedApp.name.isNotBlank() && systemContact.name != updatedApp.name && !isPlaceholderNameForPhone(updatedApp.name, updatedApp.phone)) {
                 if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
                     systemUpdated++
                     details.add(PhoneSyncDetail("系统更新姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.NAME))
@@ -1446,6 +1447,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun normalizePhone(phone: String): String = normalizeMainlandMobileNumber(phone).ifBlank { phone.filter { it.isDigit() || it == '+' } }
+
+    private fun isPlaceholderNameForPhone(name: String, phone: String): Boolean {
+        val normalizedName = normalizePhone(name)
+        val normalizedPhone = normalizePhone(phone)
+        return normalizedName.isNotEmpty() && normalizedName == normalizedPhone
+    }
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
