@@ -745,7 +745,8 @@ class MainActivity : ComponentActivity() {
 
             var updatedApp = appContact
             val appNameIsPlaceholder = isPlaceholderNameForPhone(updatedApp.name, updatedApp.phone)
-            if ((updatedApp.name.isBlank() || appNameIsPlaceholder) && systemContact.name.isNotBlank()) {
+            val systemNameIsPlaceholder = isPlaceholderNameForPhone(systemContact.name, updatedApp.phone)
+            if ((updatedApp.name.isBlank() || appNameIsPlaceholder) && systemContact.name.isNotBlank() && systemContact.name != updatedApp.name) {
                 updatedApp = updatedApp.copy(name = systemContact.name)
                 appNameUpdated++
                 details.add(PhoneSyncDetail(if (appNameIsPlaceholder) "APP更新姓名" else "APP补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, if (appNameIsPlaceholder) PhoneSyncTone.UPDATE else PhoneSyncTone.ADD, PhoneSyncField.NAME, PhoneSyncTarget.APP))
@@ -768,12 +769,11 @@ class MainActivity : ComponentActivity() {
             }
 
             if (systemContact.name.isBlank() && updatedApp.name.isNotBlank()) {
-                val nameRemovedApp = updatedApp.copy(name = "")
-                replaceAppContact(updatedApp, nameRemovedApp)
-                updatedApp = nameRemovedApp
-                appNameUpdated++
-                details.add(PhoneSyncDetail("系统删除姓名", "", updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.NAME, PhoneSyncTarget.SYSTEM))
-            } else if (systemContact.name.isNotBlank() && updatedApp.name.isNotBlank() && systemContact.name != updatedApp.name && !isPlaceholderNameForPhone(updatedApp.name, updatedApp.phone)) {
+                if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
+                    systemUpdated++
+                    details.add(PhoneSyncDetail("系统补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.ADD, PhoneSyncField.NAME))
+                }
+            } else if (systemContact.name.isNotBlank() && updatedApp.name.isNotBlank() && systemContact.name != updatedApp.name && (systemNameIsPlaceholder || !isPlaceholderNameForPhone(updatedApp.name, updatedApp.phone))) {
                 if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
                     systemUpdated++
                     details.add(PhoneSyncDetail("系统更新姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.NAME))
