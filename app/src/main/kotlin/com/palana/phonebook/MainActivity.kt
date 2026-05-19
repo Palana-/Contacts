@@ -749,7 +749,7 @@ class MainActivity : ComponentActivity() {
             if ((updatedApp.name.isBlank() || appNameIsPlaceholder) && systemContact.name.isNotBlank() && systemContact.name != updatedApp.name) {
                 updatedApp = updatedApp.copy(name = systemContact.name)
                 appNameUpdated++
-                details.add(PhoneSyncDetail(if (appNameIsPlaceholder) "APP更新姓名" else "APP补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, if (appNameIsPlaceholder) PhoneSyncTone.UPDATE else PhoneSyncTone.ADD, PhoneSyncField.NAME, PhoneSyncTarget.APP))
+                details.add(PhoneSyncDetail(if (appNameIsPlaceholder) "APP更新姓名" else "APP补姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, if (appNameIsPlaceholder) PhoneSyncTone.UPDATE else PhoneSyncTone.ADD, PhoneSyncField.NAME, PhoneSyncTarget.APP, if (appNameIsPlaceholder) appContact.name else null))
             }
             if (updatedApp.avatarUri == null && !systemContact.avatarUri.isNullOrBlank()) {
                 val localAvatar = copyAvatarToPrivateFile(systemContact.avatarUri, updatedApp.id, systemContact.contactId) ?: systemContact.avatarUri
@@ -776,7 +776,7 @@ class MainActivity : ComponentActivity() {
             } else if (systemContact.name.isNotBlank() && updatedApp.name.isNotBlank() && systemContact.name != updatedApp.name && (systemNameIsPlaceholder || !isPlaceholderNameForPhone(updatedApp.name, updatedApp.phone))) {
                 if (updateSystemContactName(systemContact.rawContactId, updatedApp.name)) {
                     systemUpdated++
-                    details.add(PhoneSyncDetail("系统更新姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.NAME))
+                    details.add(PhoneSyncDetail("系统更新姓名", updatedApp.name, updatedApp.phone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.NAME, PhoneSyncTarget.SYSTEM, systemContact.name))
                 }
             }
 
@@ -1518,6 +1518,7 @@ private data class PhoneSyncSummary(
                     .put("tone", detail.tone)
                     .put("field", detail.field)
                     .put("target", detail.target)
+                    .put("oldName", detail.oldName.orEmpty())
             )
         }
         return array.toString()
@@ -1566,7 +1567,8 @@ data class PhoneSyncDetail(
     val avatarUri: String?,
     val tone: String = PhoneSyncTone.ADD,
     val field: String = PhoneSyncField.CONTACT,
-    val target: String = if (type.startsWith("APP")) PhoneSyncTarget.APP else PhoneSyncTarget.SYSTEM
+    val target: String = if (type.startsWith("APP")) PhoneSyncTarget.APP else PhoneSyncTarget.SYSTEM,
+    val oldName: String? = null
 )
 
 object PhoneSyncTone {

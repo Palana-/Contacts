@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -112,7 +113,19 @@ class SyncDetailsActivity : ComponentActivity() {
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         if (detail.shouldShowName()) {
-                            Text(detail.name, color = detail.fieldColor(PhoneSyncField.NAME), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(detail.name, color = detail.fieldColor(PhoneSyncField.NAME), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (detail.shouldShowOldName()) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        detail.oldName.orEmpty(),
+                                        color = MutedColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textDecoration = TextDecoration.LineThrough
+                                    )
+                                }
+                            }
                         }
                         Text(groupedPhoneNumber(detail.phone), color = detail.fieldColor(PhoneSyncField.PHONE), maxLines = 1)
                     }
@@ -160,7 +173,8 @@ class SyncDetailsActivity : ComponentActivity() {
                     field = item.optString("field", PhoneSyncField.CONTACT),
                     target = item.optString("target").ifBlank {
                         if (item.optString("type").startsWith("APP")) PhoneSyncTarget.APP else PhoneSyncTarget.SYSTEM
-                    }
+                    },
+                    oldName = item.optString("oldName").ifBlank { null }
                 )
             }.sortedWith(compareBy<SyncDetail> { if (it.target == PhoneSyncTarget.SYSTEM) 0 else 1 })
         }.getOrDefault(emptyList())
@@ -173,10 +187,12 @@ class SyncDetailsActivity : ComponentActivity() {
         val avatarUri: String?,
         val tone: String,
         val field: String,
-        val target: String
+        val target: String,
+        val oldName: String?
     ) {
         fun title(): String = type.replaceFirst("APP", "APP-").replaceFirst("系统", "系统-")
         fun shouldShowName(): Boolean = name.isNotBlank() && (name != phone || field == PhoneSyncField.NAME)
+        fun shouldShowOldName(): Boolean = field == PhoneSyncField.NAME && tone == PhoneSyncTone.UPDATE && !oldName.isNullOrBlank() && oldName != name
         fun toneColor(): Color = if (tone == PhoneSyncTone.UPDATE) DangerColor else Brand
         fun isAvatarChanged(): Boolean = field == PhoneSyncField.AVATAR || field == PhoneSyncField.CONTACT
         fun fieldColor(targetField: String): Color {
@@ -190,6 +206,7 @@ class SyncDetailsActivity : ComponentActivity() {
         private val TitleColor = Color(0xFF334155)
         private val DangerColor = Color(0xFFDC2626)
         private val TextColor = Color(0xFF0F172A)
+        private val MutedColor = Color(0xFF94A3B8)
         private val SurfaceColor = Color(0xFFF8FAFC)
     }
 }
