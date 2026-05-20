@@ -127,7 +127,18 @@ class SyncDetailsActivity : ComponentActivity() {
                                 }
                             }
                         }
-                        Text(groupedPhoneNumber(detail.phone), color = detail.fieldColor(PhoneSyncField.PHONE), maxLines = 1)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(groupedPhoneNumber(detail.phone), color = detail.fieldColor(PhoneSyncField.PHONE), maxLines = 1)
+                            if (detail.shouldShowOldPhone()) {
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    groupedPhoneNumber(detail.oldPhone.orEmpty()),
+                                    color = MutedColor,
+                                    maxLines = 1,
+                                    textDecoration = TextDecoration.LineThrough
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -174,7 +185,8 @@ class SyncDetailsActivity : ComponentActivity() {
                     target = item.optString("target").ifBlank {
                         if (item.optString("type").startsWith("APP")) PhoneSyncTarget.APP else PhoneSyncTarget.SYSTEM
                     },
-                    oldName = item.optString("oldName").ifBlank { null }
+                    oldName = item.optString("oldName").ifBlank { null },
+                    oldPhone = item.optString("oldPhone").ifBlank { null }
                 )
             }
             rawDetails
@@ -198,7 +210,8 @@ class SyncDetailsActivity : ComponentActivity() {
         val tone: String,
         val field: String,
         val target: String,
-        val oldName: String?
+        val oldName: String?,
+        val oldPhone: String?
     )
 
     private data class SyncDetail(
@@ -209,7 +222,8 @@ class SyncDetailsActivity : ComponentActivity() {
         val fields: Set<String>,
         val toneByField: Map<String, String>,
         val target: String,
-        val oldName: String?
+        val oldName: String?,
+        val oldPhone: String?
     ) {
         fun title(): String {
             val prefix = if (target == PhoneSyncTarget.APP) "APP" else "系统"
@@ -218,6 +232,7 @@ class SyncDetailsActivity : ComponentActivity() {
         }
         fun shouldShowName(): Boolean = name.isNotBlank() && (name != phone || fields.contains(PhoneSyncField.NAME))
         fun shouldShowOldName(): Boolean = fields.contains(PhoneSyncField.NAME) && toneByField[PhoneSyncField.NAME] == PhoneSyncTone.UPDATE && !oldName.isNullOrBlank() && oldName != name
+        fun shouldShowOldPhone(): Boolean = fields.contains(PhoneSyncField.PHONE) && toneByField[PhoneSyncField.PHONE] == PhoneSyncTone.UPDATE && !oldPhone.isNullOrBlank() && phoneDigits(oldPhone) != phoneDigits(phone)
         fun toneColor(): Color = if ((toneByField[PhoneSyncField.AVATAR] ?: toneByField[PhoneSyncField.CONTACT]) == PhoneSyncTone.UPDATE) DangerColor else Brand
         fun isAvatarChanged(): Boolean = fields.contains(PhoneSyncField.AVATAR) || fields.contains(PhoneSyncField.CONTACT)
         fun fieldColor(targetField: String): Color {
@@ -226,6 +241,8 @@ class SyncDetailsActivity : ComponentActivity() {
         }
 
         companion object {
+            private fun phoneDigits(value: String?): String = value.orEmpty().filter(Char::isDigit)
+
             fun from(changes: List<RawSyncDetail>): SyncDetail {
                 val nameChange = changes.lastOrNull { it.field == PhoneSyncField.NAME }
                 val phoneChange = changes.lastOrNull { it.field == PhoneSyncField.PHONE }
@@ -237,7 +254,8 @@ class SyncDetailsActivity : ComponentActivity() {
                     fields = changes.map { it.field }.toSet(),
                     toneByField = changes.associate { it.field to it.tone },
                     target = changes.firstOrNull()?.target.orEmpty(),
-                    oldName = nameChange?.oldName
+                    oldName = nameChange?.oldName,
+                    oldPhone = phoneChange?.oldPhone
                 )
             }
         }

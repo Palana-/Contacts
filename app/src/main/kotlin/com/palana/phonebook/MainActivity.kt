@@ -506,25 +506,31 @@ class MainActivity : ComponentActivity() {
             onDismissRequest = onDismiss,
             confirmButton = {},
             text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                        ContactAvatar(contact = contact, size = 168)
+                        if (contact.name.isNotBlank()) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(contact.name, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold, color = TextColor, textAlign = TextAlign.Center)
+                            Spacer(Modifier.height(8.dp))
+                        } else {
+                            Spacer(Modifier.height(12.dp))
+                        }
+                        Text(groupedPhoneNumber(contact.phone), fontSize = 23.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black, textAlign = TextAlign.Center)
+                        Spacer(Modifier.height(20.dp))
+                        DialogAction("拨号", Icons.Default.Call, CallGreen, Color.White, Modifier.fillMaxWidth().height(66.dp), onCall)
+                        Spacer(Modifier.height(10.dp))
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            DialogAction("编辑", Icons.Default.Edit, Color(0xFFE0F2F1), Brand, Modifier.weight(1f).height(54.dp)) { onEdit(contact) }
+                            Spacer(Modifier.width(10.dp))
+                            DialogAction("删除", Icons.Default.Delete, DangerColor, Color.White, Modifier.weight(1f).height(54.dp), onDelete)
+                        }
+                    }
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.Default.Close, contentDescription = "关闭", tint = MutedColor)
                         }
                     }
-                    ContactAvatar(contact = contact, size = 136)
-                    if (contact.name.isNotBlank()) {
-                        Spacer(Modifier.height(14.dp))
-                        Text(contact.name, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = TextColor, textAlign = TextAlign.Center)
-                        Spacer(Modifier.height(8.dp))
-                    } else {
-                        Spacer(Modifier.height(14.dp))
-                    }
-                    Text(groupedPhoneNumber(contact.phone), fontSize = 21.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black, textAlign = TextAlign.Center)
-                    Spacer(Modifier.height(18.dp))
-                    DialogAction("拨号", Icons.Default.Call, CallGreen, Color.White, onCall)
-                    DialogAction("编辑", Icons.Default.Edit, Color(0xFFE0F2F1), Brand) { onEdit(contact) }
-                    DialogAction("删除", Icons.Default.Delete, DangerColor, Color.White, onDelete)
                 }
             }
         )
@@ -550,10 +556,10 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun DialogAction(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, background: Color, foreground: Color, onClick: () -> Unit) {
+    private fun DialogAction(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, background: Color, foreground: Color, modifier: Modifier = Modifier.fillMaxWidth().height(54.dp), onClick: () -> Unit) {
         Button(
             onClick = onClick,
-            modifier = Modifier.fillMaxWidth().height(54.dp).padding(bottom = 10.dp),
+            modifier = modifier,
             colors = ButtonDefaults.buttonColors(containerColor = background, contentColor = foreground),
             shape = RoundedCornerShape(16.dp)
         ) {
@@ -812,7 +818,7 @@ class MainActivity : ComponentActivity() {
             }
             if (phoneChanged) {
                 systemUpdated++
-                details.add(PhoneSyncDetail("系统更新号码", updatedApp.name, normalizedAppPhone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.PHONE))
+                details.add(PhoneSyncDetail("系统更新号码", updatedApp.name, normalizedAppPhone, updatedApp.avatarUri, PhoneSyncTone.UPDATE, PhoneSyncField.PHONE, oldPhone = systemContact.phoneNumber))
             }
             if (nameUpdated) {
                 systemUpdated++
@@ -1618,6 +1624,7 @@ private data class PhoneSyncSummary(
                     .put("field", detail.field)
                     .put("target", detail.target)
                     .put("oldName", detail.oldName.orEmpty())
+                    .put("oldPhone", detail.oldPhone.orEmpty())
             )
         }
         return array.toString()
@@ -1668,7 +1675,8 @@ data class PhoneSyncDetail(
     val tone: String = PhoneSyncTone.ADD,
     val field: String = PhoneSyncField.CONTACT,
     val target: String = if (type.startsWith("APP")) PhoneSyncTarget.APP else PhoneSyncTarget.SYSTEM,
-    val oldName: String? = null
+    val oldName: String? = null,
+    val oldPhone: String? = null
 )
 
 object PhoneSyncTone {
