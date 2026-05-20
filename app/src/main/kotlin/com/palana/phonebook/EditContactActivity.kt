@@ -27,7 +27,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Photo
-import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -216,30 +216,15 @@ class EditContactActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(24.dp))
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = { finish() },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE0F2F1), contentColor = Brand),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Text("取消", fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Button(
-                        onClick = { saveContact() },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Brand),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Icon(Icons.Default.Save, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("保存", fontWeight = FontWeight.Bold)
-                    }
+                Button(
+                    onClick = { saveContact() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Brand),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = "保存", modifier = Modifier.size(36.dp))
                 }
             }
         }
@@ -285,33 +270,33 @@ class EditContactActivity : ComponentActivity() {
             onDismissRequest = { showAvatarSourceDialog = false },
             title = { Text("设置头像", fontWeight = FontWeight.Bold) },
             text = {
-                Column {
+                Row(modifier = Modifier.fillMaxWidth()) {
                     Button(
                         onClick = {
                             showAvatarSourceDialog = false
                             launchCameraPicker()
                         },
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
+                            .weight(1f)
+                            .height(96.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Brand),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(14.dp)
                     ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = "拍照", modifier = Modifier.size(34.dp))
+                        Icon(Icons.Default.CameraAlt, contentDescription = "拍照", modifier = Modifier.size(42.dp))
                     }
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.width(12.dp))
                     Button(
                         onClick = {
                             showAvatarSourceDialog = false
                             launchGalleryPicker()
                         },
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
+                            .weight(1f)
+                            .height(96.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE0F2F1), contentColor = Brand),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(14.dp)
                     ) {
-                        Icon(Icons.Default.Photo, contentDescription = "从相册选择", modifier = Modifier.size(34.dp))
+                        Icon(Icons.Default.Photo, contentDescription = "从相册选择", modifier = Modifier.size(42.dp))
                     }
                 }
             },
