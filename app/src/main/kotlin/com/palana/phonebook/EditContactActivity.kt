@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Save
@@ -88,6 +89,7 @@ class EditContactActivity : ComponentActivity() {
     private var phone by mutableStateOf("")
     private var avatarUri by mutableStateOf<String?>(null)
     private var showAvatarSourceDialog by mutableStateOf(false)
+    private var showDeleteConfirmDialog by mutableStateOf(false)
     private var pendingCameraUri: Uri? = null
     private var pendingCameraFile: File? = null
 
@@ -156,6 +158,13 @@ class EditContactActivity : ComponentActivity() {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = Brand)
                     }
                 },
+                actions = {
+                    if (contactId != null) {
+                        IconButton(onClick = { showDeleteConfirmDialog = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "删除", tint = DangerColor, modifier = Modifier.size(34.dp))
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
 
@@ -168,6 +177,9 @@ class EditContactActivity : ComponentActivity() {
                 AvatarPicker()
                 if (showAvatarSourceDialog) {
                     AvatarSourceDialog()
+                }
+                if (showDeleteConfirmDialog) {
+                    DeleteConfirmDialog()
                 }
                 Spacer(Modifier.height(22.dp))
                 OutlinedTextField(
@@ -285,9 +297,7 @@ class EditContactActivity : ComponentActivity() {
                         colors = ButtonDefaults.buttonColors(containerColor = Brand),
                         shape = RoundedCornerShape(16.dp)
                     ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("拍照", fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.CameraAlt, contentDescription = "拍照", modifier = Modifier.size(34.dp))
                     }
                     Spacer(Modifier.height(10.dp))
                     Button(
@@ -301,13 +311,44 @@ class EditContactActivity : ComponentActivity() {
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE0F2F1), contentColor = Brand),
                         shape = RoundedCornerShape(16.dp)
                     ) {
-                        Icon(Icons.Default.Photo, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("从相册选择", fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.Photo, contentDescription = "从相册选择", modifier = Modifier.size(34.dp))
                     }
                 }
             },
             confirmButton = {}
+        )
+    }
+
+    @Composable
+    private fun DeleteConfirmDialog() {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = { Text("删除联系人", fontWeight = FontWeight.ExtraBold, color = TextColor) },
+            text = {
+                Column {
+                    Text("确定删除？", color = TextColor, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    Text(name.ifBlank { phone }, color = TextColor, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { confirmDelete() },
+                    colors = ButtonDefaults.buttonColors(containerColor = DangerColor),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "删除", modifier = Modifier.size(30.dp))
+                }
+            },
+            dismissButton = {
+                Button(
+                    onClick = { showDeleteConfirmDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE0F2F1), contentColor = Brand),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "取消", modifier = Modifier.size(30.dp))
+                }
+            }
         )
     }
 
@@ -377,6 +418,20 @@ class EditContactActivity : ComponentActivity() {
         }
     }
 
+    private fun confirmDelete() {
+        val id = contactId ?: return
+        setResult(
+            RESULT_OK,
+            Intent()
+                .putExtra(EXTRA_DELETE_CONFIRMED, true)
+                .putExtra(EXTRA_ID, id)
+                .putExtra(EXTRA_NAME, name.trim())
+                .putExtra(EXTRA_PHONE, normalizeMainlandMobileNumber(phone))
+                .putExtra(EXTRA_AVATAR_URI, avatarUri)
+        )
+        finish()
+    }
+
     private fun launchGalleryPicker() {
         PictureSelector.create(this)
             .openGallery(SelectMimeType.ofImage())
@@ -439,10 +494,12 @@ class EditContactActivity : ComponentActivity() {
         const val EXTRA_RECENT_AT = "recentAt"
         const val EXTRA_AVATAR_UPDATED_AT = "avatarUpdatedAt"
         const val EXTRA_AVATAR_SYNCED_AT = "avatarSyncedAt"
+        const val EXTRA_DELETE_CONFIRMED = "deleteConfirmed"
 
         private val Brand = Color(0xFF0891B2)
         private val TextColor = Color(0xFF0F172A)
         private val MutedColor = Color(0xFF64748B)
+        private val DangerColor = Color(0xFFDC2626)
         private val SurfaceColor = Color(0xFFF8FAFC)
     }
 }

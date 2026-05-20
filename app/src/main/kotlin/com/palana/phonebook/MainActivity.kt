@@ -15,8 +15,9 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -121,8 +123,19 @@ class MainActivity : ComponentActivity() {
 
     private val editContactLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
-            loadContacts()
             val id = result.data?.getStringExtra(EditContactActivity.EXTRA_ID)
+            if (result.data?.getBooleanExtra(EditContactActivity.EXTRA_DELETE_CONFIRMED, false) == true && !id.isNullOrBlank()) {
+                val contact = contacts.firstOrNull { it.id == id } ?: PhoneContact(
+                    id = id,
+                    name = result.data?.getStringExtra(EditContactActivity.EXTRA_NAME).orEmpty(),
+                    phone = result.data?.getStringExtra(EditContactActivity.EXTRA_PHONE).orEmpty(),
+                    avatarUri = result.data?.getStringExtra(EditContactActivity.EXTRA_AVATAR_URI)
+                )
+                selectedContact = null
+                deleteContact(contact)
+                return@registerForActivityResult
+            }
+            loadContacts()
             val originalPhone = result.data?.getStringExtra(EditContactActivity.EXTRA_ORIGINAL_PHONE).orEmpty()
             if (!id.isNullOrBlank()) syncEditedContactToPhone(id, originalPhone)
         }
@@ -173,10 +186,6 @@ class MainActivity : ComponentActivity() {
                 onEdit = {
                     selectedContact = null
                     openEditor(it)
-                },
-                onDelete = {
-                    selectedContact = null
-                    contactPendingDelete = contact
                 }
             )
         }
@@ -226,7 +235,17 @@ class MainActivity : ComponentActivity() {
         ) {
             TopAppBar(
                 title = {
-                    Text("电话本", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = TextColor)
+                    val avatarCount = contacts.count { !it.avatarUri.isNullOrBlank() }
+                    val noAvatarCount = contacts.size - avatarCount
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("电话本", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = TextColor)
+                        Spacer(Modifier.width(10.dp))
+                        Icon(Icons.Default.Photo, contentDescription = "有头像联系人", tint = Brand, modifier = Modifier.size(18.dp))
+                        Text(avatarCount.toString(), fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Brand)
+                        Spacer(Modifier.width(8.dp))
+                        Icon(Icons.Default.Person, contentDescription = "无头像联系人", tint = MutedColor, modifier = Modifier.size(18.dp))
+                        Text(noAvatarCount.toString(), fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = MutedColor)
+                    }
                 },
                 actions = {
                     IconButton(onClick = { openEditor(null) }) {
@@ -273,6 +292,7 @@ class MainActivity : ComponentActivity() {
                 ContactGrid(
                     contacts = buildContactItems(),
                     onContactClick = { selectedContact = it },
+                    onContactDeleteRequest = { contactPendingDelete = it },
                     modifier = Modifier.fillMaxSize().navigationBarsPadding()
                 )
             }
@@ -299,7 +319,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun ContactGrid(contacts: List<PhoneContact>, onContactClick: (PhoneContact) -> Unit, modifier: Modifier = Modifier) {
+    private fun ContactGrid(contacts: List<PhoneContact>, onContactClick: (PhoneContact) -> Unit, onContactDeleteRequest: (PhoneContact) -> Unit, modifier: Modifier = Modifier) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             modifier = modifier,
@@ -313,86 +333,116 @@ class MainActivity : ComponentActivity() {
                 span = { GridItemSpan(if (it.avatarUri.isNullOrBlank()) 2 else 1) }
             ) { contact ->
                 if (contact.avatarUri.isNullOrBlank()) {
-                    CompactContactRow(contact = contact, onClick = { onContactClick(contact) })
+                    CompactContactRow(contact = contact, onClick = { onContactClick(contact) }, onDeleteRequest = { onContactDeleteRequest(contact) })
                 } else {
-                    AvatarContactTile(contact = contact, onClick = { onContactClick(contact) })
+                    AvatarContactTile(contact = contact, onClick = { onContactClick(contact) }, onDeleteRequest = { onContactDeleteRequest(contact) })
                 }
             }
         }
     }
 
     @Composable
-    private fun AvatarContactTile(contact: PhoneContact, onClick: () -> Unit) {
-        Card(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-            shape = RoundedCornerShape(18.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Box(modifier = Modifier.background(gradientFor(contact))) {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current).data(contact.avatarUri).crossfade(true).build(),
-                    contentDescription = contact.displayName(),
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(1f)
-                )
+    private fun AvatarContactTile(contact: PhoneContact, onClick: () -> Unit, onDeleteRequest: () -> Unit) {
+        var menuOpen by remember { mutableStateOf(false) }
+        Box {
+            Card(
+                modifier = Modifier.fillMaxWidth().contactItemGestures(onClick = onClick, onLongClick = { menuOpen = true }),
+                shape = RoundedCornerShape(18.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Box(modifier = Modifier.background(gradientFor(contact))) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current).data(contact.avatarUri).crossfade(true).build(),
+                        contentDescription = contact.displayName(),
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                    )
+                    if (contact.name.isNotBlank()) {
+                        Text(
+                            text = contact.name,
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 20.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(34.dp)
+                                .background(Color.Black.copy(alpha = 0.55f))
+                                .padding(horizontal = 2.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+            ContactItemMenu(expanded = menuOpen, onDismiss = { menuOpen = false }, onDelete = {
+                menuOpen = false
+                onDeleteRequest()
+            })
+        }
+    }
+
+    @Composable
+    private fun CompactContactRow(contact: PhoneContact, onClick: () -> Unit, onDeleteRequest: () -> Unit) {
+        var menuOpen by remember { mutableStateOf(false) }
+        Box {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color.White)
+                    .contactItemGestures(onClick = onClick, onLongClick = { menuOpen = true })
+                    .padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 if (contact.name.isNotBlank()) {
-                    Text(
-                        text = contact.name,
-                        color = Color.White,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 20.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
+                    Box(
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(34.dp)
-                            .background(Color.Black.copy(alpha = 0.55f))
-                            .padding(horizontal = 2.dp, vertical = 4.dp)
-                    )
+                            .height(44.dp)
+                            .width(136.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(gradientFor(contact))
+                            .padding(horizontal = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            contact.name,
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 20.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.height(44.dp).width(136.dp))
                 }
+                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.weight(1f))
+                PhoneNumberText(contact.phone)
             }
+            ContactItemMenu(expanded = menuOpen, onDismiss = { menuOpen = false }, onDelete = {
+                menuOpen = false
+                onDeleteRequest()
+            })
         }
     }
 
+    @OptIn(ExperimentalFoundationApi::class)
+    private fun Modifier.contactItemGestures(onClick: () -> Unit, onLongClick: () -> Unit): Modifier {
+        return combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    }
+
     @Composable
-    private fun CompactContactRow(contact: PhoneContact, onClick: () -> Unit) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(Color.White)
-                .clickable(onClick = onClick)
-                .padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (contact.name.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .height(44.dp)
-                        .width(136.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(gradientFor(contact))
-                        .padding(horizontal = 4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        contact.name,
-                        color = Color.White,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 20.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            } else {
-                Spacer(Modifier.height(44.dp).width(136.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Spacer(Modifier.weight(1f))
-            PhoneNumberText(contact.phone)
+    private fun ContactItemMenu(expanded: Boolean, onDismiss: () -> Unit, onDelete: () -> Unit) {
+        DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+            DropdownMenuItem(
+                text = { Text("删除", fontWeight = FontWeight.Bold) },
+                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = DangerColor) },
+                onClick = onDelete
+            )
         }
     }
 
@@ -440,14 +490,15 @@ class MainActivity : ComponentActivity() {
                     onClick = onConfirm,
                     colors = ButtonDefaults.buttonColors(containerColor = DangerColor, contentColor = Color.White)
                 ) {
-                    Icon(Icons.Default.Delete, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("删除", fontWeight = FontWeight.Bold)
+                    Icon(Icons.Default.Delete, contentDescription = "删除", modifier = Modifier.size(30.dp))
                 }
             },
             dismissButton = {
-                TextButton(onClick = onDismiss) {
-                    Text("取消", fontWeight = FontWeight.Bold, color = Brand)
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE0F2F1), contentColor = Brand)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "取消", modifier = Modifier.size(30.dp))
                 }
             }
         )
@@ -499,8 +550,7 @@ class MainActivity : ComponentActivity() {
         contact: PhoneContact,
         onDismiss: () -> Unit,
         onCall: () -> Unit,
-        onEdit: (PhoneContact) -> Unit,
-        onDelete: () -> Unit
+        onEdit: (PhoneContact) -> Unit
     ) {
         AlertDialog(
             onDismissRequest = onDismiss,
@@ -518,12 +568,10 @@ class MainActivity : ComponentActivity() {
                         }
                         Text(groupedPhoneNumber(contact.phone), fontSize = 23.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black, textAlign = TextAlign.Center)
                         Spacer(Modifier.height(20.dp))
-                        DialogAction("拨号", Icons.Default.Call, CallGreen, Color.White, Modifier.fillMaxWidth().height(66.dp), onCall)
-                        Spacer(Modifier.height(10.dp))
                         Row(modifier = Modifier.fillMaxWidth()) {
-                            DialogAction("编辑", Icons.Default.Edit, Color(0xFFE0F2F1), Brand, Modifier.weight(1f).height(54.dp)) { onEdit(contact) }
+                            DialogAction("编辑", Icons.Default.Edit, Color(0xFFE0F2F1), Brand, Modifier.weight(1f).height(68.dp)) { onEdit(contact) }
                             Spacer(Modifier.width(10.dp))
-                            DialogAction("删除", Icons.Default.Delete, DangerColor, Color.White, Modifier.weight(1f).height(54.dp), onDelete)
+                            DialogAction("拨号", Icons.Default.Call, CallGreen, Color.White, Modifier.weight(1f).height(68.dp), onCall)
                         }
                     }
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
@@ -563,9 +611,7 @@ class MainActivity : ComponentActivity() {
             colors = ButtonDefaults.buttonColors(containerColor = background, contentColor = foreground),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Icon(icon, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(label, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Icon(icon, contentDescription = label, modifier = Modifier.size(34.dp))
         }
     }
 
