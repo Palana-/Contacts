@@ -7,7 +7,6 @@ import android.view.Window
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -60,9 +59,15 @@ import androidx.lifecycle.lifecycleScope
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
+import com.luck.picture.lib.basic.PictureSelector
+import com.luck.picture.lib.config.SelectMimeType
+import com.luck.picture.lib.config.SelectModeConfig
+import com.luck.picture.lib.entity.LocalMedia
+import com.luck.picture.lib.interfaces.OnResultCallbackListener
 import com.palana.phonebook.data.AvatarStorage
 import com.palana.phonebook.data.ContactRepository
 import java.io.File
+import java.util.ArrayList
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -85,17 +90,6 @@ class EditContactActivity : ComponentActivity() {
     private var showAvatarSourceDialog by mutableStateOf(false)
     private var pendingCameraUri: Uri? = null
     private var pendingCameraFile: File? = null
-
-    private val pickAvatarLauncher = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        lifecycleScope.launch {
-            val localUri = withContext(Dispatchers.IO) { avatarStorage.copyOptimizedAvatar(uri?.toString()) }
-            if (uri != null && localUri == null) {
-                toast("头像读取失败")
-            } else if (localUri != null) {
-                avatarUri = localUri
-            }
-        }
-    }
 
     private val takeAvatarLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         val capturedUri = pendingCameraUri
@@ -384,9 +378,40 @@ class EditContactActivity : ComponentActivity() {
     }
 
     private fun launchGalleryPicker() {
-        pickAvatarLauncher.launch(
-            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-        )
+        PictureSelector.create(this)
+            .openGallery(SelectMimeType.ofImage())
+            .setImageEngine(CoilPictureImageEngine)
+            .setLanguage(com.luck.picture.lib.language.LanguageConfig.CHINESE)
+            .setSelectionMode(SelectModeConfig.SINGLE)
+            .setMaxSelectNum(1)
+            .setImageSpanCount(4)
+            .isDisplayCamera(false)
+            .isDirectReturnSingle(true)
+            .forResult(object : OnResultCallbackListener<LocalMedia> {
+                override fun onResult(result: ArrayList<LocalMedia>) {
+                    val sourcePath = result.firstOrNull()?.availableAvatarPath()
+                    lifecycleScope.launch {
+                        val localUri = withContext(Dispatchers.IO) {
+                            avatarStorage.copyOptimizedAvatar(sourcePath)
+                        }
+                        if (sourcePath != null && localUri == null) {
+                            toast("头像读取失败")
+                        } else if (localUri != null) {
+                            avatarUri = localUri
+                        }
+                    }
+                }
+
+                override fun onCancel() = Unit
+            })
+    }
+
+    private fun LocalMedia.availableAvatarPath(): String? {
+        return availablePath
+            .takeIf { it.isNotBlank() }
+            ?: path.takeIf { it.isNotBlank() }
+            ?: realPath.takeIf { it.isNotBlank() }
+            ?: originalPath.takeIf { it.isNotBlank() }
     }
 
     private fun launchCameraPicker() {
